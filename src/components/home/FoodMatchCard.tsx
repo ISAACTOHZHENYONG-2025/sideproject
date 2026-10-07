@@ -42,7 +42,7 @@ export default function FoodMatchCard({ match }: FoodMatchCardProps) {
             isTop ? "bg-emerald-500" : "bg-slate-700"
           }`}
         >
-          #{match.rank} MATCH • {match.fit}%
+          #{match.rank} MATCH{match.fit ? ` • ${match.fit}%` : ""}
         </div>
       </div>
 
@@ -51,7 +51,7 @@ export default function FoodMatchCard({ match }: FoodMatchCardProps) {
           <div>
             <div className="flex items-center gap-1.5 flex-wrap">
               <h3 className="text-[16px] font-bold text-on-surface leading-tight">{match.title}</h3>
-              <span className={stallClass}>{match.stall}</span>
+              {match.stall ? <span className={stallClass}>{match.stall}</span> : null}
             </div>
             <p className="text-[11px] text-on-surface-variant flex items-center gap-1 mt-0.5">
               <MaterialIcon name={match.locationIcon} className="text-[13px] text-primary" />

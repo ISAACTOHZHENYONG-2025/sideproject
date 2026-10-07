@@ -33,7 +33,7 @@ const TIME_OPTIONS = [
   { minutes: 60, label: "60+ mins" },
 ];
 
-const DIET_TAGS = [
+export const DIET_TAGS = [
   { id: "Halal", label: "Halal (JAKIM)" },
   { id: "Vegetarian", label: "Vegetarian" },
   { id: "Vegan", label: "Vegan" },

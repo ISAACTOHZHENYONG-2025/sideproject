@@ -1,9 +1,11 @@
+import type { RecommendationItem } from "@/app/api/decide/route";
+
 export type FoodMatch = {
   id: string;
   rank: number;
-  fit: number;
+  fit?: number;
   title: string;
-  stall: string;
+  stall?: string;
   stallTone?: "slate" | "amber";
   location: string;
   locationIcon: string;
@@ -95,3 +97,31 @@ export const FOOD_MATCHES: FoodMatch[] = [
   },
 ];
 
+
+export function fromRecommendation(rec: RecommendationItem, index: number, budget: number): FoodMatch {
+  const method = rec.travelMethod.toLowerCase();
+  const isBus = /bus|shuttle/.test(method);
+  const isDrive = !isBus && /drive|car|motor|ride/.test(method);
+  const withinBudget = rec.estimatedCostMYR <= budget;
+
+  return {
+    id: `${index}-${rec.venueName}`,
+    rank: index + 1,
+    title: rec.venueName,
+    location: rec.travelMethod,
+    locationIcon: isDrive ? "directions_car" : isBus ? "directions_bus" : "directions_walk",
+    price: `RM ${rec.estimatedCostMYR.toFixed(2)}`,
+    priceNote: withinBudget ? `Under RM${budget}` : "Over budget",
+    priceNoteTone: withinBudget ? "emerald" : "muted",
+    pickLabel: index === 0 ? "Optimal Pick" : "Also Great",
+    pickName: rec.recommendedItem,
+    duration: `${rec.estimatedTimeMins} min total`,
+    travelIcon: isDrive ? "directions_car" : isBus ? "directions_bus" : "directions_walk",
+    travelLabel: rec.travelMethod,
+    travelIconTone: isBus || isDrive ? "amber" : "primary",
+    insight: rec.reasoning,
+    primaryCta: "View Menu",
+    secondaryCta: isBus ? "Bus Track" : "Directions",
+    secondaryIcon: isBus ? "commute" : "near_me",
+  };
+}

@@ -88,12 +88,25 @@ if (roomCode) {
     report(`POST /api/group/join (${m.memberName})`, joined.status === 200 && joined.data.success === true, `status ${joined.status}`);
   }
 
+  try {
+    const res = await fetch(`${BASE}/api/group/members?roomCode=${roomCode}`);
+    const room = await res.json();
+    const names = (room.participants ?? []).map((p) => p.memberName).join(", ");
+    report("GET /api/group/members (2 members)", res.status === 200 && room.participants?.length === 2, names);
+  } catch (err) {
+    report("GET /api/group/members", false, err.message);
+  }
+
   const resolved = await post("/api/group/resolve", { roomCode });
   report("POST /api/group/resolve (2 members)", resolved.status === 200, `status ${resolved.status}: ${resolved.data.error ?? ""}`);
   if (resolved.status === 200) console.log("  response keys:", Object.keys(resolved.data).join(", "));
 }
 
 // error cases
+const noMembersCode = await fetch(`${BASE}/api/group/members`);
+report("GET /api/group/members (no roomCode) -> 400", noMembersCode.status === 400, `status ${noMembersCode.status}`);
+const unknownRoom = await fetch(`${BASE}/api/group/members?roomCode=UM-ZZZ`);
+report("GET /api/group/members (unknown room) -> 404", unknownRoom.status === 404, `status ${unknownRoom.status}`);
 const noCode = await post("/api/group/join", { memberName: "X" });
 report("POST /api/group/join (no roomCode) -> 400", noCode.status === 400, `status ${noCode.status}`);
 const badCode = await post("/api/group/join", { roomCode: "UM-ZZZ" });

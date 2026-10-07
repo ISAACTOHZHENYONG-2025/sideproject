@@ -1,0 +1,52 @@
+import type { DecideRequestPayload, DecideResponseData } from "@/app/api/decide/route";
+import type { RoomInfo } from "@/app/api/group/members/route";
+import type { JoinMemberPayload } from "@/app/api/group/join/route";
+import type { GroupResolveResponse } from "@/app/api/group/resolve/route";
+import type { FilterDraft } from "@/components/home/FilterBottomSheet";
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error ?? `Request failed (${res.status})`);
+  }
+  return data as T;
+}
+
+function post<T>(url: string, body: unknown) {
+  return request<T>(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export const decide = (payload: DecideRequestPayload) =>
+  post<DecideResponseData>("/api/decide", payload);
+
+export const createRoom = (hostName: string) =>
+  post<{ roomCode: string; roomId: string }>("/api/group/create", { hostName });
+
+export const joinRoom = (payload: JoinMemberPayload) =>
+  post<{ success: boolean }>("/api/group/join", payload);
+
+export const resolveRoom = (roomCode: string) =>
+  post<GroupResolveResponse>("/api/group/resolve", { roomCode });
+
+export const getRoom = (roomCode: string) =>
+  request<RoomInfo>(`/api/group/members?roomCode=${encodeURIComponent(roomCode)}`);
+
+export type { RoomInfo, GroupResolveResponse };
+
+// Dietary tags that are real restrictions; "Budget Meal" is a price preference instead.
+const NON_DIETARY_TAGS = ["Budget Meal"];
+
+export function toDecidePayload(filters: FilterDraft): DecideRequestPayload {
+  return {
+    maxBudget: filters.tags.includes("Budget Meal") ? Math.min(filters.budget, 10) : filters.budget,
+    availableTimeMins: filters.time,
+    location: "Universiti Malaya Central",
+    dietaryRestrictions: filters.tags.filter((tag) => !NON_DIETARY_TAGS.includes(tag)),
+    transportMode: filters.transport === "drive" ? "private_vehicle" : "walk_or_public",
+  };
+}
