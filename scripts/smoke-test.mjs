@@ -1,0 +1,105 @@
+// Smoke test for the pages and API routes. Start the app first (`npm run dev`), then:
+//   node scripts/smoke-test.mjs [baseUrl]
+// Note: the group steps write a test room and two participants to Firestore.
+
+const BASE = process.argv[2] ?? "http://localhost:3000";
+let failed = 0;
+
+function report(name, ok, detail = "") {
+  if (!ok) failed++;
+  console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  (${detail})` : ""}`);
+}
+
+async function page(path) {
+  try {
+    const res = await fetch(BASE + path);
+    report(`GET ${path}`, res.status === 200, `status ${res.status}`);
+  } catch (err) {
+    report(`GET ${path}`, false, err.message);
+  }
+}
+
+async function post(path, body) {
+  try {
+    const res = await fetch(BASE + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { status: res.status, data };
+  } catch (err) {
+    return { status: 0, data: { error: err.message } };
+  }
+}
+
+console.log(`Testing ${BASE}\n`);
+
+try {
+  await fetch(BASE);
+} catch (err) {
+  const cause = err.cause?.code ?? err.cause?.message ?? err.message;
+  console.error(`Cannot reach ${BASE} (${cause}).`);
+  console.error("Start the app with `npm run dev`, then pass its URL, e.g. node scripts/smoke-test.mjs http://127.0.0.1:3000");
+  process.exit(2);
+}
+
+for (const path of ["/", "/group", "/filter", "/regular"]) await page(path);
+
+// /api/decide
+for (const transportMode of ["walk_or_public", "private_vehicle"]) {
+  const { status, data } = await post("/api/decide", {
+    maxBudget: 15,
+    availableTimeMins: 30,
+    dietaryRestrictions: ["Halal"],
+    transportMode,
+  });
+  const recs = data.recommendations;
+  report(
+    `POST /api/decide (${transportMode})`,
+    status === 200 && Array.isArray(recs) && recs.length > 0,
+    status === 200 ? `${recs?.length ?? 0} recommendations` : `status ${status}: ${data.error ?? ""}`,
+  );
+  if (Array.isArray(recs)) {
+    const overBudget = recs.filter((r) => r.estimatedCostMYR > 15);
+    report(`  all within RM15 (${transportMode})`, overBudget.length === 0);
+  }
+}
+
+// /api/group/*
+const created = await post("/api/group/create", { hostName: "SmokeTest Host" });
+const roomCode = created.data.roomCode;
+report(
+  "POST /api/group/create",
+  created.status === 200 && /^UM-[A-Z0-9]{3}$/.test(roomCode ?? ""),
+  created.status === 200 ? roomCode : `status ${created.status}: ${created.data.error ?? ""}`,
+);
+
+if (roomCode) {
+  const empty = await post("/api/group/resolve", { roomCode });
+  report("POST /api/group/resolve (no members) -> 400", empty.status === 400, `status ${empty.status}`);
+
+  const members = [
+    { memberName: "Alex", maxBudget: 10, availableTimeMins: 30, transportMode: "walk_or_public", dietaryRestrictions: ["Halal"] },
+    { memberName: "Sarah", maxBudget: 20, availableTimeMins: 45, transportMode: "private_vehicle", dietaryRestrictions: [] },
+  ];
+  for (const m of members) {
+    const joined = await post("/api/group/join", { roomCode, ...m });
+    report(`POST /api/group/join (${m.memberName})`, joined.status === 200 && joined.data.success === true, `status ${joined.status}`);
+  }
+
+  const resolved = await post("/api/group/resolve", { roomCode });
+  report("POST /api/group/resolve (2 members)", resolved.status === 200, `status ${resolved.status}: ${resolved.data.error ?? ""}`);
+  if (resolved.status === 200) console.log("  response keys:", Object.keys(resolved.data).join(", "));
+}
+
+// error cases
+const noCode = await post("/api/group/join", { memberName: "X" });
+report("POST /api/group/join (no roomCode) -> 400", noCode.status === 400, `status ${noCode.status}`);
+const badCode = await post("/api/group/join", { roomCode: "UM-ZZZ" });
+report("POST /api/group/join (unknown room) -> 404", badCode.status === 404, `status ${badCode.status}`);
+const badResolve = await post("/api/group/resolve", {});
+report("POST /api/group/resolve (no roomCode) -> 400", badResolve.status === 400, `status ${badResolve.status}`);
+
+console.log(failed === 0 ? "\nAll checks passed." : `\n${failed} check(s) failed.`);
+process.exit(failed === 0 ? 0 : 1);
