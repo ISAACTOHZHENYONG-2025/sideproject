@@ -1,4 +1,4 @@
-import { collection, writeBatch, doc } from "firebase/firestore";
+import { collection, writeBatch, doc, getDocs, DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
 import { db } from "./firebase";
 import { Venue } from "./types";
 
@@ -130,10 +130,28 @@ export async function seedFirestoreDatabase(): Promise<{ success: boolean; count
 
     console.log("Seeding venues to project:", projectId);
 
-    const batch = writeBatch(db);
     const venuesCollection = collection(db, "venues");
+    const existingSnapshot = await getDocs(venuesCollection);
+    const existingNames = new Set<string>();
+    existingSnapshot.forEach((d: QueryDocumentSnapshot<DocumentData>) => {
+      const n = d.data().name;
+      if (n) existingNames.add(n.trim().toLowerCase());
+    });
 
-    SAMPLE_CAMPUS_VENUES.forEach((venueData) => {
+    const venuesToInsert = SAMPLE_CAMPUS_VENUES.filter(
+      (v) => !existingNames.has(v.name.trim().toLowerCase())
+    );
+
+    if (venuesToInsert.length === 0) {
+      return {
+        success: true,
+        count: 0,
+        error: "All campus venues are already seeded! No duplicates added.",
+      };
+    }
+
+    const batch = writeBatch(db);
+    venuesToInsert.forEach((venueData) => {
       const docRef = doc(venuesCollection);
       batch.set(docRef, {
         ...venueData,
