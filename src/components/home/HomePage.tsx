@@ -1,20 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import FilterBottomSheet, { type FilterDraft } from "./FilterBottomSheet";
+import FilterBottomSheet, { DEFAULT_FILTERS, type FilterDraft } from "./FilterBottomSheet";
 import FoodMatchCard from "./FoodMatchCard";
 import GroupConsensusView from "./GroupConsensusView";
 import HomeBottomBar from "./HomeBottomBar";
 import HomeHeader from "./HomeHeader";
 import MaterialIcon from "./MaterialIcon";
 import { FOOD_MATCHES } from "./matchData";
-
-const DEFAULT_FILTERS: FilterDraft = {
-  budget: 15,
-  time: 30,
-  transport: "walk",
-  tags: ["Halal"],
-};
 
 export default function HomePage() {
   const [mode, setMode] = useState<"single" | "group">("single");
@@ -25,6 +18,7 @@ export default function HomePage() {
 
   const applyFilters = () => {
     setApplied(draft);
+    setMode(draft.mode);
     setSheetOpen(false);
     setFiltersChanged(0);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -38,7 +32,7 @@ export default function HomePage() {
           time={applied.time}
           transport={applied.transport}
           onOpenFilters={() => {
-            setDraft(applied);
+            setDraft({ ...applied, mode });
             setSheetOpen(true);
           }}
         />

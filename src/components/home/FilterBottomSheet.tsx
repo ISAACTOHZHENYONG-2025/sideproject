@@ -3,10 +3,19 @@
 import MaterialIcon from "./MaterialIcon";
 
 export type FilterDraft = {
+  mode: "single" | "group";
   budget: number;
   time: number;
   transport: "walk" | "drive";
   tags: string[];
+};
+
+export const DEFAULT_FILTERS: FilterDraft = {
+  mode: "single",
+  budget: 15,
+  time: 30,
+  transport: "walk",
+  tags: ["Halal"],
 };
 
 type FilterBottomSheetProps = {
@@ -17,8 +26,43 @@ type FilterBottomSheetProps = {
   onApply: () => void;
 };
 
-const TIME_OPTIONS = [15, 30, 45, 60];
-const DIET_TAGS = ["Halal", "Vegetarian", "No spicy", "High protein"];
+const TIME_OPTIONS = [
+  { minutes: 15, label: "15 mins" },
+  { minutes: 30, label: "30 mins" },
+  { minutes: 45, label: "45 mins" },
+  { minutes: 60, label: "60+ mins" },
+];
+
+const DIET_TAGS = [
+  { id: "Halal", label: "Halal (JAKIM)" },
+  { id: "Vegetarian", label: "Vegetarian" },
+  { id: "Vegan", label: "Vegan" },
+  { id: "No Seafood", label: "No Seafood" },
+  { id: "Budget Meal", label: "Budget Meal < RM10" },
+];
+
+const TRANSPORT_NOTES = {
+  walk: {
+    icon: "ℹ️",
+    text: "Prioritizes covered walkways & UM Shuttle Route A (Free student loop).",
+  },
+  drive: {
+    icon: "🚗",
+    text: "Broadens radius to off-campus eateries & commercial plazas within a 15-min drive.",
+  },
+} as const;
+
+function budgetLabel(budget: number) {
+  const tier = budget <= 10 ? "Bajet" : budget <= 18 ? "Standard" : "Feast";
+  return `RM ${budget.toFixed(2)} (${tier})`;
+}
+
+const segmentClass = (active: boolean) =>
+  `flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-full text-xs transition-all ${
+    active
+      ? "font-bold bg-surface-container-lowest text-primary shadow-[0_2px_8px_rgba(30,35,41,0.04)]"
+      : "font-semibold text-[#6C757D] hover:text-on-surface"
+  }`;
 
 export default function FilterBottomSheet({
   open,
@@ -32,7 +76,7 @@ export default function FilterBottomSheet({
       <button
         aria-hidden={!open}
         aria-label="Close filters"
-        className={`fixed inset-0 bg-black/50 z-50 transition-opacity duration-300 ${
+        className={`fixed inset-0 bg-black/60 backdrop-blur-[2px] z-50 transition-opacity duration-300 ${
           open ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
         onClick={onClose}
@@ -41,31 +85,69 @@ export default function FilterBottomSheet({
       />
       <div
         aria-hidden={!open}
-        className={`fixed bottom-0 inset-x-0 max-w-[420px] mx-auto z-50 bg-white rounded-t-3xl shadow-2xl transition-transform duration-300 ${
+        aria-label="Dining and schedule filters"
+        className={`fixed bottom-0 inset-x-0 max-w-[420px] mx-auto z-50 h-[82dvh] bg-surface-container-lowest rounded-t-[28px] shadow-[0_10px_30px_rgba(0,0,0,0.10)] flex flex-col overflow-hidden transition-transform duration-300 ${
           open ? "translate-y-0" : "translate-y-full pointer-events-none"
         }`}
         id="bottom-sheet"
+        role="dialog"
       >
-        <div className="px-4 pt-3 pb-6">
-          <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-300" />
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-[16px] font-extrabold text-on-surface">Filters</h2>
-            <button
-              className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center"
-              onClick={onClose}
-              type="button"
-            >
-              <MaterialIcon name="close" className="text-[18px]" />
-            </button>
+        <div className="w-full pt-3 pb-1.5 flex justify-center shrink-0">
+          <div className="w-10 h-1.5 rounded-full bg-[#DEE2E6]" />
+        </div>
+
+        <div className="px-5 py-2.5 flex items-center justify-between border-b border-[#E9ECEF] shrink-0">
+          <h2 className="text-[19px] font-bold tracking-tight text-on-surface">Dining &amp; Schedule Filters</h2>
+          <button
+            className="text-xs font-bold text-primary hover:text-primary-dark active:opacity-70 px-2 py-1 rounded transition-colors"
+            onClick={() => onChange(DEFAULT_FILTERS)}
+            type="button"
+          >
+            Clear All
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 pb-28 no-scrollbar">
+          <div>
+            <p className="block text-[11px] font-bold uppercase tracking-wider text-[#6C757D] mb-1.5">
+              Optimization Mode
+            </p>
+            <div className="grid grid-cols-2 p-1 bg-[#F1F3F5] rounded-full gap-1">
+              <button
+                className={segmentClass(draft.mode === "single")}
+                onClick={() => onChange({ ...draft, mode: "single" })}
+                type="button"
+              >
+                <span>🏃</span>
+                <span>Single Student</span>
+              </button>
+              <button
+                className={segmentClass(draft.mode === "group")}
+                onClick={() => onChange({ ...draft, mode: "group" })}
+                type="button"
+              >
+                <span>👥</span>
+                <span>Group Room</span>
+                <span className="px-1.5 rounded-full text-[9px] font-extrabold bg-[#FFB800] text-[#4A3200]">
+                  3 live
+                </span>
+              </button>
+            </div>
           </div>
 
-          <label className="block mb-4">
+          <div className="p-3.5 rounded-2xl bg-background border border-[#E9ECEF]">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[13px] font-bold text-on-surface">Budget ceiling</span>
-              <span className="text-[13px] font-extrabold text-primary">RM {Number(draft.budget).toFixed(2)}</span>
+              <label className="text-xs font-bold text-on-surface flex items-center gap-1.5" htmlFor="budget-input">
+                <MaterialIcon name="payments" className="text-primary text-[17px]" />
+                Budget Ceiling
+              </label>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary text-white shadow-sm tabular-nums">
+                {budgetLabel(draft.budget)}
+              </span>
             </div>
             <input
-              className="w-full accent-primary"
+              className="w-full accent-primary h-2 cursor-pointer my-2"
+              id="budget-input"
               max={30}
               min={5}
               onChange={(event) => onChange({ ...draft, budget: Number(event.target.value) })}
@@ -73,96 +155,124 @@ export default function FilterBottomSheet({
               type="range"
               value={draft.budget}
             />
-          </label>
+            <div className="flex justify-between text-[11px] font-semibold text-[#6C757D] px-0.5 tabular-nums">
+              <span>RM 5 (Bajet)</span>
+              <span className="font-bold">RM 15</span>
+              <span>RM 30 (Feast)</span>
+            </div>
+          </div>
 
-          <div className="mb-4">
-            <p className="text-[13px] font-bold text-on-surface mb-2">Max time window</p>
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                <MaterialIcon name="schedule" className="text-tertiary-container text-[17px]" />
+                Lecture Gap / Available Time
+              </p>
+              <span className="text-[11px] text-[#6C757D] font-medium">Prep + Walk included</span>
+            </div>
             <div className="grid grid-cols-4 gap-2">
-              {TIME_OPTIONS.map((minutes) => {
+              {TIME_OPTIONS.map(({ minutes, label }) => {
                 const selected = draft.time === minutes;
                 return (
                   <button
-                    className={`py-2 text-center rounded-xl text-[12px] transition-all ${
+                    aria-pressed={selected}
+                    className={`h-9 text-center rounded-full text-xs transition-all active:scale-95 tabular-nums ${
                       selected
                         ? "font-bold bg-primary text-white shadow-sm"
-                        : "font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        : "font-semibold bg-[#F1F3F5] text-[#495057] hover:bg-[#E9ECEF]"
                     }`}
                     key={minutes}
                     onClick={() => onChange({ ...draft, time: minutes })}
                     type="button"
                   >
-                    {minutes}m
+                    {label}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div className="mb-4">
-            <p className="text-[13px] font-bold text-on-surface mb-2">Transport</p>
-            <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+          <div>
+            <p className="text-xs font-bold text-on-surface mb-2 flex items-center gap-1.5">
+              <MaterialIcon name="directions_walk" className="text-primary text-[17px]" />
+              Campus Mobility
+            </p>
+            <div className="grid grid-cols-2 p-1 bg-[#F1F3F5] rounded-full gap-1">
               <button
-                className={`py-2 rounded-lg text-[12px] flex items-center justify-center gap-1 ${
-                  draft.transport === "walk"
-                    ? "font-bold bg-white text-primary shadow-sm"
-                    : "font-medium text-slate-600"
-                }`}
+                className={segmentClass(draft.transport === "walk")}
                 onClick={() => onChange({ ...draft, transport: "walk" })}
                 type="button"
               >
-                <span>🚶</span>
-                Walk/Bus
+                <span className="text-sm">🚶</span>
+                <span>Walk / Shuttle Bus</span>
               </button>
               <button
-                className={`py-2 rounded-lg text-[12px] flex items-center justify-center gap-1 ${
-                  draft.transport === "drive"
-                    ? "font-bold bg-white text-primary shadow-sm"
-                    : "font-medium text-slate-600"
-                }`}
+                className={segmentClass(draft.transport === "drive")}
                 onClick={() => onChange({ ...draft, transport: "drive" })}
                 type="button"
               >
-                <span>🚗</span>
-                Car/Bike
+                <span className="text-sm">🚗</span>
+                <span>Car / GrabBike</span>
               </button>
             </div>
+            <p className="text-[11px] text-[#6C757D] mt-2 px-1 flex items-start gap-1">
+              <span className="text-primary font-bold">{TRANSPORT_NOTES[draft.transport].icon}</span>
+              <span>{TRANSPORT_NOTES[draft.transport].text}</span>
+            </p>
           </div>
 
-          <div className="mb-5">
-            <p className="text-[13px] font-bold text-on-surface mb-2">Dietary</p>
-            <div className="flex flex-wrap gap-1.5">
-              {DIET_TAGS.map((tag) => {
-                const active = draft.tags.includes(tag);
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                <MaterialIcon name="verified" className="text-primary text-[17px]" />
+                Dietary &amp; Preference Tags
+              </p>
+              <span className="text-[11px] text-[#6C757D]">Multi-select</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {DIET_TAGS.map(({ id, label }) => {
+                const active = draft.tags.includes(id);
                 return (
                   <button
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] ${
+                    aria-pressed={active}
+                    className={`flex items-center gap-1 px-3 h-9 rounded-full text-xs transition-all active:scale-95 ${
                       active
-                        ? "font-bold bg-emerald-500 text-white shadow-sm"
-                        : "font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        ? "font-bold bg-[#E6F7ED] text-primary border-[1.5px] border-primary"
+                        : "font-semibold bg-surface-container-lowest text-[#1E2329] border border-[#E9ECEF] hover:bg-[#F1F3F5]"
                     }`}
-                    key={tag}
+                    key={id}
                     onClick={() =>
                       onChange({
                         ...draft,
-                        tags: active ? draft.tags.filter((item) => item !== tag) : [...draft.tags, tag],
+                        tags: active ? draft.tags.filter((item) => item !== id) : [...draft.tags, id],
                       })
                     }
                     type="button"
                   >
-                    {active ? <MaterialIcon name="check" className="text-[13px]" /> : null}
-                    {tag}
+                    {active ? <MaterialIcon name="check" className="text-[15px]" /> : null}
+                    {label}
                   </button>
                 );
               })}
             </div>
           </div>
+        </div>
 
+        <div className="absolute bottom-0 inset-x-0 p-4 bg-surface-container-lowest/95 backdrop-blur-md border-t border-[#E9ECEF] flex items-center gap-3">
           <button
-            className="w-full py-3 rounded-full bg-primary text-white text-[13px] font-extrabold shadow-lg shadow-emerald-500/25"
+            className="h-12 px-4 rounded-full text-xs font-bold text-[#1E2329] bg-[#F1F3F5] hover:bg-[#E9ECEF] active:scale-95 transition-all shrink-0"
+            onClick={() => onChange(DEFAULT_FILTERS)}
+            type="button"
+          >
+            Reset
+          </button>
+          <button
+            className="flex-1 h-12 px-4 rounded-full bg-primary hover:bg-primary-dark text-white font-bold text-sm shadow-md shadow-primary/25 flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
             onClick={onApply}
             type="button"
           >
-            Apply filters
+            <MaterialIcon name="search" className="text-[18px]" />
+            <span>Apply Filters &amp; Find Meal</span>
           </button>
         </div>
       </div>
