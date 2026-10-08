@@ -359,6 +359,15 @@ ${JSON.stringify(venues)}
     const candidate = take(id);
     if (candidate) ranked.push({ candidate });
   }
+
+  // With no craving, nothing should be left out on purpose, so anything Gemini didn't mention goes to the
+  // end, nearest first. With a craving, an omission is usually deliberate (e.g. a cafe for a "noodles"
+  // search), so it's left out.
+  if (!craving) {
+    const omitted = candidates.filter((_, index) => !used.has(index)).sort(rankByDistanceAndRating);
+    for (const candidate of omitted) ranked.push({ candidate });
+  }
+
   return ranked;
 }
 
@@ -417,7 +426,9 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
     if (apiKey) {
       try {
-        return respond("gemini", await rankWithGemini(apiKey, candidates, craving, dietaryRestrictions));
+        const ranked = await rankWithGemini(apiKey, candidates, craving, dietaryRestrictions);
+        if (ranked.length > 0) return respond("gemini", ranked);
+        console.warn("Gemini returned no usable venues, using code-only fallback");
       } catch (err) {
         console.warn("Gemini ranking failed, using code-only fallback:", err);
       }
