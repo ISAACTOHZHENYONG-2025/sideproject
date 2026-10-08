@@ -2,7 +2,7 @@ import type { DecideRequestPayload, DecideResponseData } from "@/app/api/decide/
 import type { RoomInfo } from "@/app/api/group/members/route";
 import type { JoinMemberPayload } from "@/app/api/group/join/route";
 import type { GroupResolveResponse } from "@/app/api/group/resolve/route";
-import type { FilterDraft } from "@/components/home/FilterBottomSheet";
+import type { FilterDraft } from "./filters";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -43,9 +43,10 @@ const NON_DIETARY_TAGS = ["Budget Meal"];
 
 export function toDecidePayload(filters: FilterDraft): DecideRequestPayload {
   return {
+    craving: filters.craving.trim(),
+    locationId: filters.locationId,
     maxBudget: filters.tags.includes("Budget Meal") ? Math.min(filters.budget, 10) : filters.budget,
     availableTimeMins: filters.time,
-    location: "Universiti Malaya Central",
     dietaryRestrictions: filters.tags.filter((tag) => !NON_DIETARY_TAGS.includes(tag)),
     transportMode: filters.transport === "drive" ? "private_vehicle" : "walk_or_public",
   };

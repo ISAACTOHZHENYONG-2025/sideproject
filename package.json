@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "db:cli": "npx tsx scripts/db-cli.ts",
-    "db:import-nearby": "npx tsx scripts/import-nearby-venues.ts"
+    "db:import-nearby": "npx tsx scripts/import-nearby-venues.ts",
+    "db:export-sheet": "npx tsx scripts/export-venues-sheet.ts",
+    "db:import-sheet": "npx tsx scripts/import-venues-sheet.ts"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",

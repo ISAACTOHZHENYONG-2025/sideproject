@@ -3,334 +3,395 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
-import { googleMapsUrl, mapsUrlForVenueName } from "@/lib/maps";
+import { googleMapsUrl } from "@/lib/maps";
+import { distanceMeters, driveMinutes, walkMinutes } from "@/lib/geo";
+import { findLocation } from "@/lib/locations";
 
 export interface DecideRequestPayload {
+  // Free text such as "noodles" or "mcd"; empty means anything.
+  craving?: string;
+  locationId: string;
   maxBudget: number;
   availableTimeMins: number;
-  location: string;
   dietaryRestrictions: string[];
   transportMode: "walk_or_public" | "private_vehicle";
 }
 
-export interface RecommendationItem {
+// A venue that fits the student's budget, diet and time.
+export interface VenueMatch {
   venueName: string;
-  recommendedItem: string;
   estimatedCostMYR: number;
-  estimatedTimeMins: number;
+  isHalal: boolean;
+  serves: string[];
+  rating?: number;
+  // Straight-line distance from the chosen location; absent when the venue has no coordinates.
+  distanceMeters?: number;
+  travelMins: number;
   travelMethod: string;
-  reasoning: string;
+  // Travel + prep time
+  estimatedTimeMins: number;
   // Google Maps directions link; Maps works out the route from the user's location.
-  mapsUrl?: string;
+  mapsUrl: string;
+}
+
+export interface RecommendationItem extends VenueMatch {
+  reasoning: string;
 }
 
 export interface DecideResponseData {
   recommendations: RecommendationItem[];
+  moreMatches: VenueMatch[];
+  engine: "gemini" | "fallback";
+  locationLabel: string;
 }
 
-// Additional off-campus food hotspots within driving distance of Universiti Malaya
-const OFF_CAMPUS_DRIVING_HOTSPOTS = [
+// Off-campus spots only offered when the student can drive. Coordinates are from Google Places.
+const OFF_CAMPUS_DRIVING_HOTSPOTS: Venue[] = [
   {
     name: "Village Park Restaurant",
-    location: "Damansara Utama (Uptown), PJ (approx. 10-15 min drive from UM)",
+    location: "Damansara Utama (Uptown), PJ",
+    placeId: "ChIJIfYLMzFJzDERPG9vHZ7DqiE",
+    latitude: 3.13769,
+    longitude: 101.62333,
     avgPriceMYR: 15.0,
     avgPrepTimeMins: 10,
     isHalal: true,
+    serves: ["rice", "nasi lemak", "malay"],
     dietaryTags: ["Halal", "Famous Nasi Lemak", "Malay Cuisine", "Top Rated"],
     menuItems: [
       { itemName: "Nasi Lemak Ayam Goreng Berempah", priceMYR: 13.5 },
       { itemName: "Soto Ayam", priceMYR: 10.5 },
-      { itemName: "Teh Tarik Kaw", priceMYR: 3.8 },
     ],
   },
   {
     name: "Restoran Mahbub",
-    location: "Lorong Bangsar, Bangsar (approx. 8-12 min drive from UM)",
+    location: "Lorong Bangsar, Bangsar",
+    placeId: "ChIJ99BxoplJzDERhX5gIi2_BGU",
+    latitude: 3.12838,
+    longitude: 101.67029,
     avgPriceMYR: 14.0,
     avgPrepTimeMins: 8,
     isHalal: true,
+    serves: ["rice", "biryani", "roti", "noodles", "mamak"],
     dietaryTags: ["Halal", "Mamak", "Nasi Briyani", "Indian Muslim", "Late Night"],
     menuItems: [
       { itemName: "Nasi Briyani Ayam Madu", priceMYR: 14.5 },
-      { itemName: "Roti Canai Special", priceMYR: 4.5 },
       { itemName: "Mee Goreng Mamak", priceMYR: 7.5 },
     ],
   },
   {
     name: "The Ganga Cafe",
-    location: "Lorong Kurau, Bangsar (approx. 7-10 min drive from UM)",
+    location: "Lorong Kurau, Bangsar",
+    placeId: "ChIJ-0H2IZtJzDEROu7FdjD33FY",
+    latitude: 3.12264,
+    longitude: 101.67102,
     avgPriceMYR: 18.0,
     avgPrepTimeMins: 15,
     isHalal: true,
+    serves: ["indian", "vegetarian", "rice"],
     dietaryTags: ["Vegetarian", "Vegan-Friendly", "Indian Cuisine", "Healthy"],
     menuItems: [
       { itemName: "Pratha with Dhal & Chana Masala", priceMYR: 12.0 },
       { itemName: "Vegetarian Biryani Set", priceMYR: 18.0 },
-      { itemName: "Masala Chai", priceMYR: 6.0 },
     ],
   },
   {
     name: "Nasi Lemak Bumbung",
-    location: "Jalan 21/11b, Sea Park, PJ (approx. 12-15 min drive from UM)",
+    location: "Jalan 21/11b, Sea Park, PJ",
+    placeId: "ChIJD0P7YHtLzDERKU8IXyctme0",
+    latitude: 3.10982,
+    longitude: 101.62251,
     avgPriceMYR: 9.0,
     avgPrepTimeMins: 6,
     isHalal: true,
+    serves: ["rice", "nasi lemak", "noodles"],
     dietaryTags: ["Halal", "Supper Spot", "Budget-Friendly", "PJ Classic"],
     menuItems: [
       { itemName: "Nasi Lemak Ayam Goreng + Telur Mata", priceMYR: 8.5 },
       { itemName: "Indomie Goreng Double", priceMYR: 6.5 },
-      { itemName: "Limau Ais", priceMYR: 2.5 },
     ],
   },
 ];
+
+// Used only when the Firestore venues collection can't be read or is empty.
+const FALLBACK_CAMPUS_VENUES: Venue[] = [
+  {
+    name: "KK12 Dining Hall (Raja Dr. Nazrin Shah)",
+    location: "12th Residential College, Universiti Malaya",
+    latitude: 3.12568,
+    longitude: 101.66084,
+    avgPriceMYR: 8.5,
+    avgPrepTimeMins: 5,
+    isHalal: true,
+    serves: ["rice", "nasi campur"],
+    dietaryTags: ["Halal", "Budget-Friendly", "Nasi Campur"],
+    menuItems: [{ itemName: "Nasi Campur (Ayam Goreng + 2 Sayur)", priceMYR: 7.5 }],
+  },
+  {
+    name: "Perdanasiswa Complex (KPS) Central Canteen",
+    location: "Kompleks Perdanasiswa, Universiti Malaya",
+    avgPriceMYR: 9.0,
+    avgPrepTimeMins: 7,
+    isHalal: true,
+    serves: ["rice", "noodles"],
+    dietaryTags: ["Halal", "Economy Rice", "Student Union"],
+    menuItems: [{ itemName: "Nasi Kandar Ayam Bawang + Bendi", priceMYR: 9.5 }],
+  },
+];
+
+// Travel time assumed for hand-seeded venues that have no coordinates yet.
+const UNKNOWN_TRAVEL_MINS = 10;
+const DEFAULT_PREP_MINS = 10;
+const PLACEHOLDER_MENU_ITEM = "Typical meal";
+
+// What students type → words that show up in venue names, serves, tags and menus.
+const CRAVING_ALIASES: Record<string, string[]> = {
+  noodle: ["mee", "mi", "kuey teow", "koay teow", "laksa", "ramen", "pho", "bihun", "maggi", "indomie", "pasta", "yee mee"],
+  rice: ["nasi", "biryani", "briyani", "economy rice", "chicken rice"],
+  "fast food": ["burger", "fried chicken", "mcdonald", "kfc", "pizza", "fast food restaurant"],
+  mcd: ["mcdonald"],
+  western: ["chicken chop", "burger", "pasta", "steak", "western restaurant"],
+  coffee: ["cafe", "coffee shop", "kopi"],
+  bread: ["bakery", "roti", "pastry"],
+  mamak: ["roti canai", "nasi kandar", "mee goreng mamak"],
+};
+
+type Candidate = { venue: Venue; match: VenueMatch };
+
+function escapeRegExp(text: string) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function cravingPatterns(craving: string): RegExp[] {
+  const key = craving.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, "").replace(/s$/, "");
+  if (!key) return [];
+  const terms = [key, ...(CRAVING_ALIASES[key] ?? [])];
+  return terms.map((term) => new RegExp(`\\b${escapeRegExp(term)}s?\\b`, "i"));
+}
+
+function venueSearchText(venue: Venue) {
+  return [
+    venue.name,
+    ...(venue.serves ?? []),
+    ...(venue.dietaryTags ?? []),
+    ...(venue.menuItems ?? []).map((m) => m.itemName).filter((name) => name !== PLACEHOLDER_MENU_ITEM),
+  ].join(" | ");
+}
+
+function toVenueMatch(venue: Venue, origin: ReturnType<typeof findLocation>, drive: boolean): VenueMatch {
+  const hasCoords = typeof venue.latitude === "number" && typeof venue.longitude === "number";
+  const meters = hasCoords
+    ? Math.round(distanceMeters(origin, { latitude: venue.latitude!, longitude: venue.longitude! }))
+    : undefined;
+  const travelMins =
+    meters === undefined ? UNKNOWN_TRAVEL_MINS : drive ? driveMinutes(meters) : walkMinutes(meters);
+
+  return {
+    venueName: venue.name,
+    estimatedCostMYR: venue.avgPriceMYR,
+    isHalal: Boolean(venue.isHalal),
+    serves: venue.serves ?? [],
+    rating: venue.rating,
+    distanceMeters: meters,
+    travelMins,
+    travelMethod: `${travelMins}-min ${drive ? "drive" : "walk"}`,
+    estimatedTimeMins: travelMins + (venue.avgPrepTimeMins || DEFAULT_PREP_MINS),
+    mapsUrl: googleMapsUrl(venue),
+  };
+}
+
+// Code-only ranking: nearest first (in 5-minute bands), then best rated, then cheapest.
+function rankByDistanceAndRating(a: Candidate, b: Candidate) {
+  const band = (c: Candidate) => Math.round(c.match.travelMins / 5);
+  return (
+    band(a) - band(b) ||
+    (b.match.rating ?? 0) - (a.match.rating ?? 0) ||
+    a.match.estimatedCostMYR - b.match.estimatedCostMYR
+  );
+}
+
+function fallbackReason(c: Candidate, craving: string, locationLabel: string) {
+  const parts = [`${c.match.travelMethod} from ${locationLabel}`, `about RM${c.match.estimatedCostMYR.toFixed(2)}`];
+  if (c.match.isHalal) parts.push("halal");
+  if (c.match.rating) parts.push(`rated ${c.match.rating.toFixed(1)}`);
+  const lead = craving ? `Matches "${craving}": ` : "";
+  return `${lead}${parts.join(", ")}.`;
+}
+
+async function rankWithGemini(
+  apiKey: string,
+  candidates: Candidate[],
+  craving: string,
+  locationLabel: string,
+  dietaryRestrictions: string[],
+): Promise<{ recommendations: RecommendationItem[]; moreMatches: VenueMatch[] }> {
+  const venues = candidates.map(({ venue, match }) => ({
+    name: venue.name,
+    serves: match.serves,
+    menuHints: (venue.menuItems ?? []).map((m) => m.itemName).filter((n) => n !== PLACEHOLDER_MENU_ITEM),
+    tags: venue.dietaryTags ?? [],
+    priceMYR: match.estimatedCostMYR,
+    halal: match.isHalal,
+    rating: match.rating ?? null,
+    distanceMeters: match.distanceMeters ?? null,
+    travel: match.travelMethod,
+    totalMins: match.estimatedTimeMins,
+  }));
+
+  const prompt = `
+You pick where a Universiti Malaya student should eat. Every venue below already fits their budget,
+time and halal requirement, so judge them only on the craving, distance, rating and price.
+
+Student:
+- Starting from: ${locationLabel}
+- Craving: ${craving || "anything (no preference)"}
+- Other dietary preferences: ${dietaryRestrictions.filter((d) => d !== "Halal").join(", ") || "none"}
+
+Rules:
+- If there is a craving, only include venues that plausibly serve it (use "serves", "menuHints", "tags" and the name;
+  Malaysian terms count, e.g. mee/kuey teow/laksa are noodles, nasi is rice, "mcd" means McDonald's).
+- "recommendations": the best 3 (fewer if fewer fit), best first. "reasoning" is one short sentence (under 25 words)
+  and mentions the craving when there is one.
+- "moreMatches": the names of every other venue that also fits, best first. Do not repeat the recommendations.
+- Use venue names exactly as given.
+
+Venues:
+${JSON.stringify(venues)}
+`;
+
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.generateContent({
+    model: "gemini-3.8-flash",
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseJsonSchema: {
+        type: Type.OBJECT,
+        properties: {
+          recommendations: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                venueName: { type: Type.STRING },
+                reasoning: { type: Type.STRING },
+              },
+              required: ["venueName", "reasoning"],
+            },
+          },
+          moreMatches: { type: Type.ARRAY, items: { type: Type.STRING } },
+        },
+        required: ["recommendations", "moreMatches"],
+      },
+    },
+  });
+
+  const parsed = JSON.parse(response.text ?? "{}") as {
+    recommendations?: { venueName: string; reasoning: string }[];
+    moreMatches?: string[];
+  };
+
+  // Map Gemini's names back to our own data so price, distance and links can't be invented.
+  const byName = new Map<string, Candidate>();
+  for (const c of candidates) {
+    const key = c.venue.name.trim().toLowerCase();
+    if (!byName.has(key)) byName.set(key, c);
+  }
+  const used = new Set<string>();
+  const take = (name: string) => {
+    const key = name.trim().toLowerCase();
+    const c = byName.get(key);
+    if (!c || used.has(key)) return undefined;
+    used.add(key);
+    return c;
+  };
+
+  const recommendations: RecommendationItem[] = [];
+  for (const rec of parsed.recommendations ?? []) {
+    if (recommendations.length >= 3) break;
+    const c = take(rec.venueName);
+    if (c) recommendations.push({ ...c.match, reasoning: rec.reasoning });
+  }
+  const moreMatches = (parsed.moreMatches ?? []).flatMap((name) => {
+    const c = take(name);
+    return c ? [c.match] : [];
+  });
+  return { recommendations, moreMatches };
+}
 
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as Partial<DecideRequestPayload>;
 
+    const craving = String(body.craving ?? "").trim().slice(0, 60);
+    const origin = findLocation(body.locationId);
     const maxBudget = Number(body.maxBudget ?? 15);
     const availableTimeMins = Number(body.availableTimeMins ?? 30);
-    const userLocation = (body.location || "Universiti Malaya Central").trim();
-    const dietaryRestrictions = Array.isArray(body.dietaryRestrictions)
-      ? body.dietaryRestrictions
-      : [];
-    const transportMode =
-      body.transportMode === "private_vehicle" ? "private_vehicle" : "walk_or_public";
+    const dietaryRestrictions = Array.isArray(body.dietaryRestrictions) ? body.dietaryRestrictions : [];
+    const drive = body.transportMode === "private_vehicle";
+    const halalOnly = dietaryRestrictions.includes("Halal");
 
-    // 1. Fetch campus venues from Firestore
-    let campusVenues: Venue[] = [];
+    // 1. Load venues from Firestore
+    let venues: Venue[] = [];
     if (db) {
       try {
         const snapshot = await getDocs(collection(db, "venues"));
         snapshot.forEach((docSnap) => {
-          campusVenues.push({ id: docSnap.id, ...(docSnap.data() as Omit<Venue, "id">) });
+          venues.push({ id: docSnap.id, ...(docSnap.data() as Omit<Venue, "id">) });
         });
       } catch (err) {
         console.warn("Could not fetch venues from Firestore, proceeding with fallback:", err);
       }
     }
+    if (venues.length === 0) venues = FALLBACK_CAMPUS_VENUES;
+    if (drive) venues = [...venues, ...OFF_CAMPUS_DRIVING_HOTSPOTS];
 
-    // Fallback campus venues if DB collection is temporarily empty
-    if (campusVenues.length === 0) {
-      campusVenues = [
-        {
-          name: "KK12 Dining Hall (Raja Dr. Nazrin Shah)",
-          location: "12th Residential College, Universiti Malaya (Near Bus Stop)",
-          avgPriceMYR: 8.5,
-          avgPrepTimeMins: 5,
-          isHalal: true,
-          dietaryTags: ["Halal", "Budget-Friendly", "Nasi Campur"],
-          menuItems: [
-            { itemName: "Nasi Campur (Ayam Goreng + 2 Sayur)", priceMYR: 7.5 },
-            { itemName: "Nasi Lemak Ayam Berempah", priceMYR: 8.0 },
-          ],
-        },
-        {
-          name: "Faculty of Science Food Court (FOS Bistro)",
-          location: "Faculty of Science, near Department of Chemistry (Shuttle Stop)",
-          avgPriceMYR: 11.0,
-          avgPrepTimeMins: 12,
-          isHalal: true,
-          dietaryTags: ["Halal", "Western", "Noodles"],
-          menuItems: [
-            { itemName: "Chicken Chop with Black Pepper Sauce", priceMYR: 13.5 },
-            { itemName: "Claypot Yee Mee", priceMYR: 8.5 },
-          ],
-        },
-        {
-          name: "Perdanasiswa Complex (KPS) Central Canteen",
-          location: "Kompleks Perdanasiswa (UM Central Bus Terminal Hub)",
-          avgPriceMYR: 9.0,
-          avgPrepTimeMins: 7,
-          isHalal: true,
-          dietaryTags: ["Halal", "Economy Rice", "Student Union"],
-          menuItems: [
-            { itemName: "Nasi Kandar Ayam Bawang + Bendi", priceMYR: 9.5 },
-            { itemName: "Soto Ayam Begedil", priceMYR: 7.0 },
-          ],
-        },
-      ];
-    }
+    // 2. Drop venues that can't work: over budget, not halal when required, or not enough time
+    const candidates: Candidate[] = venues
+      .map((venue) => ({ venue, match: toVenueMatch(venue, origin, drive) }))
+      .filter(({ venue, match }) => {
+        if (!(venue.avgPriceMYR <= maxBudget)) return false;
+        if (halalOnly && !venue.isHalal) return false;
+        return match.estimatedTimeMins <= availableTimeMins;
+      });
 
-    // 2. Filter / expand pool depending on transportMode
-    let candidatePool = [...campusVenues];
+    const respond = (
+      engine: DecideResponseData["engine"],
+      result: Pick<DecideResponseData, "recommendations" | "moreMatches">,
+    ) =>
+      NextResponse.json<DecideResponseData>(
+        { ...result, engine, locationLabel: origin.label },
+        { status: 200 },
+      );
 
-    let transportInstructions = "";
-    if (transportMode === "walk_or_public") {
-      transportInstructions = `
-CRITICAL TRANSPORT CONSTRAINTS (WALK / PUBLIC TRANSIT ONLY):
-- The user has NO vehicle. Do NOT recommend places requiring private cars or long travel.
-- Prioritize immediate proximity to the user's location (${userLocation}) and bus/LRT or UM campus shuttle accessibility.
-- Filter strictly for venues reachable quickly on foot or via campus shuttle bus.
-- Enforce strict Total Time calculation: Total Time = Walking/Bus Transit Time + Food Prep Time.
-- The estimatedTimeMins MUST be the realistic sum of transit + meal prep, and MUST NOT exceed the user's available time of ${availableTimeMins} minutes.
-- travelMethod must specify a walking or campus shuttle method (e.g., "5-min walk", "UM Shuttle Bus Route C (8 mins)", "10-min walk").
-`;
-    } else {
-      // private_vehicle: expand candidate pool to include top-rated off-campus driving spots
-      candidatePool = [...candidatePool, ...OFF_CAMPUS_DRIVING_HOTSPOTS];
-      transportInstructions = `
-CRITICAL TRANSPORT CONSTRAINTS (PRIVATE VEHICLE):
-- The user HAS a vehicle (car / motorbike). Distance is flexible.
-- Prioritize top-rated and highly recommended food options (both campus and driving hotspots around Bangsar, PJ, Damansara, etc.), factoring in a reasonable drive time (5-20 mins).
-- Factor in drive time + food prep time into estimatedTimeMins.
-- travelMethod must specify the drive or commute method (e.g., "7-min drive", "12-min drive via Federal Highway", "4-min motorbike ride").
-`;
-    }
+    if (candidates.length === 0) return respond("fallback", { recommendations: [], moreMatches: [] });
 
-    // 3. Check for Gemini API key
-    const apiKey =
-      process.env.GEMINI_API_KEY ||
-      process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
-    // If Gemini key is provided, use Gemini 3.8 Flash with structured schema
+    // 3. Let Gemini pick the best 3 and order the rest by the craving
+    const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
     if (apiKey) {
-      const ai = new GoogleGenAI({ apiKey });
-
-      const prompt = `
-You are the AI Decision Engine for the Student Food Intelligence system at Universiti Malaya (UM).
-Your task is to analyze dining options and recommend the 2 to 4 best meals for the student given their constraints.
-
-STUDENT PROFILE & CONSTRAINTS:
-- Current Location: ${userLocation}
-- Maximum Budget: RM${maxBudget.toFixed(2)}
-- Available Time: ${availableTimeMins} minutes
-- Dietary Restrictions: ${dietaryRestrictions.length > 0 ? dietaryRestrictions.join(", ") : "None specified"}
-- Transport Mode: ${transportMode}
-
-${transportInstructions}
-
-BUDGET & DIETARY RULES:
-- The item's estimatedCostMYR MUST be <= RM${maxBudget.toFixed(2)}.
-- If dietary restrictions are present (e.g., "Halal", "Vegetarian"), respect them strictly.
-- Choose a specific dish/item from the venue's available menu or characteristic dishes.
-
-AVAILABLE VENUE CANDIDATES DATA:
-${JSON.stringify(candidatePool, null, 2)}
-
-Provide your response adhering strictly to the structured schema.
-`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseJsonSchema: {
-            type: Type.OBJECT,
-            properties: {
-              recommendations: {
-                type: Type.ARRAY,
-                description: "Ranked list of best food recommendations matching constraints.",
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    venueName: {
-                      type: Type.STRING,
-                      description: "Name of the dining venue or restaurant.",
-                    },
-                    recommendedItem: {
-                      type: Type.STRING,
-                      description: "Specific food or drink item recommended.",
-                    },
-                    estimatedCostMYR: {
-                      type: Type.NUMBER,
-                      description: "Price of the recommended item in Malaysian Ringgit (MYR).",
-                    },
-                    estimatedTimeMins: {
-                      type: Type.NUMBER,
-                      description:
-                        "Total estimated time in minutes (travel time + food preparation time).",
-                    },
-                    travelMethod: {
-                      type: Type.STRING,
-                      description:
-                        "How the user reaches the venue (e.g., '5-min walk', 'Campus Shuttle Bus', '10-min drive').",
-                    },
-                    reasoning: {
-                      type: Type.STRING,
-                      description:
-                        "Clear explanation why this spot matches the student's budget, location, transport mode, and time constraint.",
-                    },
-                  },
-                  required: [
-                    "venueName",
-                    "recommendedItem",
-                    "estimatedCostMYR",
-                    "estimatedTimeMins",
-                    "travelMethod",
-                    "reasoning",
-                  ],
-                },
-              },
-            },
-            required: ["recommendations"],
-          },
-        },
-      });
-
-      const parsedData = JSON.parse(
-        response.text ?? '{"recommendations": []}'
-      ) as DecideResponseData;
-
-      const recommendations = (parsedData.recommendations ?? []).map((rec) => ({
-        ...rec,
-        mapsUrl: mapsUrlForVenueName(rec.venueName, candidatePool),
-      }));
-      return NextResponse.json({ recommendations }, { status: 200 });
-    }
-
-    // Heuristic Fallback Engine if GEMINI_API_KEY is not yet populated
-    const filteredCandidates = candidatePool.filter((v) => {
-      if (dietaryRestrictions.includes("Halal") && !v.isHalal) return false;
-      return true;
-    });
-
-    const recommendations: RecommendationItem[] = [];
-
-    for (const venue of filteredCandidates) {
-      if (recommendations.length >= 3) break;
-
-      const affordableItem =
-        venue.menuItems?.find((m) => m.priceMYR <= maxBudget) ||
-        venue.menuItems?.[0];
-
-      if (!affordableItem || affordableItem.priceMYR > maxBudget) continue;
-
-      let travelMethod = "";
-      let travelMins = 5;
-
-      if (transportMode === "walk_or_public") {
-        travelMethod =
-          venue.location.includes("Bus") || venue.location.includes("Hub")
-            ? "Campus Shuttle Bus (6 mins)"
-            : "5-min walk";
-        travelMins = 6;
-      } else {
-        travelMethod = venue.location.includes("PJ") || venue.location.includes("Bangsar")
-          ? "10-min drive"
-          : "4-min motorbike / car ride";
-        travelMins = 10;
+      try {
+        return respond("gemini", await rankWithGemini(apiKey, candidates, craving, origin.label, dietaryRestrictions));
+      } catch (err) {
+        console.warn("Gemini ranking failed, using code-only fallback:", err);
       }
-
-      const totalTime = travelMins + (venue.avgPrepTimeMins || 10);
-      if (totalTime > availableTimeMins) continue;
-
-      recommendations.push({
-        venueName: venue.name,
-        recommendedItem: affordableItem.itemName,
-        estimatedCostMYR: affordableItem.priceMYR,
-        estimatedTimeMins: totalTime,
-        travelMethod,
-        mapsUrl: googleMapsUrl(venue),
-        reasoning:
-          transportMode === "walk_or_public"
-            ? `Within fast walking/shuttle distance of ${userLocation}, fits budget of RM${maxBudget}, and respects dietary preferences.`
-            : `Accessible by vehicle with flexible range, top-rated option under RM${maxBudget} fitting your ${availableTimeMins}-minute window.`,
-      });
     }
 
-    return NextResponse.json({ recommendations }, { status: 200 });
+    // 4. Code-only fallback: match the craving against serves, name, tags and menu, then rank
+    const patterns = cravingPatterns(craving);
+    const ranked = candidates
+      .filter(({ venue }) => {
+        if (patterns.length === 0) return true;
+        const text = venueSearchText(venue);
+        return patterns.some((p) => p.test(text));
+      })
+      .sort(rankByDistanceAndRating);
+
+    return respond("fallback", {
+      recommendations: ranked
+        .slice(0, 3)
+        .map((c) => ({ ...c.match, reasoning: fallbackReason(c, craving, origin.label) })),
+      moreMatches: ranked.slice(3).map((c) => c.match),
+    });
   } catch (error) {
     console.error("Error in /api/decide route:", error);
     return NextResponse.json(
@@ -338,7 +399,7 @@ Provide your response adhering strictly to the structured schema.
         error: "Failed to generate food decision recommendations.",
         details: error instanceof Error ? error.message : String(error),
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

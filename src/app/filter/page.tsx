@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import FilterBottomSheet, { DEFAULT_FILTERS, type FilterDraft } from "@/components/home/FilterBottomSheet";
+import FilterBottomSheet from "@/components/home/FilterBottomSheet";
+import { DEFAULT_FILTERS, filtersToSearchParams, type FilterDraft } from "@/lib/filters";
 
 export default function FilterPage() {
   const router = useRouter();
@@ -12,7 +13,7 @@ export default function FilterPage() {
     <div className="bg-[#f0f3f6] min-h-screen">
       <FilterBottomSheet
         draft={draft}
-        onApply={() => router.push(draft.mode === "group" ? "/group" : "/")}
+        onApply={() => router.push(`/?${filtersToSearchParams(draft)}`)}
         onChange={setDraft}
         onClose={() => router.back()}
         open

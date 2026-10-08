@@ -1,13 +1,18 @@
 import MaterialIcon from "@/components/ui/MaterialIcon";
+import type { FilterDraft } from "@/lib/filters";
+import { findLocation } from "@/lib/locations";
 
 type HomeHeaderProps = {
-  budget: number;
-  time: number;
-  transport: "walk" | "drive";
+  filters: FilterDraft;
   onOpenFilters: () => void;
 };
 
-export default function HomeHeader({ budget, time, transport, onOpenFilters }: HomeHeaderProps) {
+const chipClass =
+  "shrink-0 flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px] font-bold";
+
+export default function HomeHeader({ filters, onOpenFilters }: HomeHeaderProps) {
+  const craving = filters.craving.trim();
+
   return (
     <header className="sticky top-0 z-40 bg-surface shadow-[0_1px_4px_rgba(0,0,0,0.06)] px-4 pt-3 pb-2.5">
       <div className="flex items-center justify-between py-1">
@@ -27,37 +32,33 @@ export default function HomeHeader({ budget, time, transport, onOpenFilters }: H
           <MaterialIcon name="tune" className="text-[15px]" />
           <span>Filters</span>
         </button>
-        <button
-          className="shrink-0 flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px] font-bold"
-          onClick={onOpenFilters}
-          type="button"
-        >
+        {craving ? (
+          <button className={chipClass} onClick={onOpenFilters} type="button">
+            <MaterialIcon name="search" className="text-[13px] text-emerald-600" />
+            <span className="max-w-[9rem] truncate">{craving}</span>
+          </button>
+        ) : null}
+        <button className={chipClass} onClick={onOpenFilters} type="button">
+          <MaterialIcon name="location_on" className="text-[13px] text-emerald-600" />
+          <span>{findLocation(filters.locationId).label}</span>
+        </button>
+        <button className={`${chipClass} tabular-nums`} onClick={onOpenFilters} type="button">
           <span className="text-xs">⚡</span>
-          <span>Max RM{budget}</span>
+          <span>Max RM{filters.budget}</span>
         </button>
-        <button
-          className="shrink-0 flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px] font-bold"
-          onClick={onOpenFilters}
-          type="button"
-        >
+        <button className={`${chipClass} tabular-nums`} onClick={onOpenFilters} type="button">
           <span className="text-xs">⏱️</span>
-          <span>{time} mins</span>
+          <span>{filters.time} mins</span>
         </button>
-        <button
-          className="shrink-0 flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px] font-bold"
-          onClick={onOpenFilters}
-          type="button"
-        >
-          <span>{transport === "walk" ? "🚶 Walk/Bus" : "🚗 Car/Bike"}</span>
+        <button className={chipClass} onClick={onOpenFilters} type="button">
+          <span>{filters.transport === "walk" ? "🚶 Walk" : "🚗 Drive"}</span>
         </button>
-        <button
-          className="shrink-0 flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px] font-bold"
-          onClick={onOpenFilters}
-          type="button"
-        >
-          <MaterialIcon name="verified" className="text-[13px] text-emerald-600" />
-          <span>Halal (Jakim)</span>
-        </button>
+        {filters.tags.includes("Halal") ? (
+          <button className={chipClass} onClick={onOpenFilters} type="button">
+            <MaterialIcon name="verified" className="text-[13px] text-emerald-600" />
+            <span>Halal</span>
+          </button>
+        ) : null}
       </div>
     </header>
   );

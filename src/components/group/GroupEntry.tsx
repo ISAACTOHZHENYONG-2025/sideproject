@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createRoom, joinRoom } from "@/lib/api";
-import { DIET_TAGS } from "../home/FilterBottomSheet";
+import { DIET_TAGS } from "@/lib/filters";
 import MaterialIcon from "@/components/ui/MaterialIcon";
 
 export type GroupSession = { roomCode: string; memberName: string };

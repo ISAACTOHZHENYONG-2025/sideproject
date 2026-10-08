@@ -1,19 +1,27 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { DecideResponseData, VenueMatch } from "@/app/api/decide/route";
 import BottomNav from "@/components/BottomNav";
 import { decide, toDecidePayload } from "@/lib/api";
-import FilterBottomSheet, { DEFAULT_FILTERS, type FilterDraft } from "./FilterBottomSheet";
+import type { FilterDraft } from "@/lib/filters";
+import FilterBottomSheet from "./FilterBottomSheet";
 import FoodMatchCard from "./FoodMatchCard";
 import HomeHeader from "./HomeHeader";
 import MaterialIcon from "@/components/ui/MaterialIcon";
+import MoreMatchesList from "./MoreMatchesList";
 import { fromRecommendation, type FoodMatch } from "./foodMatch";
 
 type Status = "loading" | "ready" | "error";
 
+type HomePageProps = {
+  initialFilters: FilterDraft;
+};
+
 function countChanges(a: FilterDraft, b: FilterDraft) {
   let changes = 0;
+  if (a.craving.trim().toLowerCase() !== b.craving.trim().toLowerCase()) changes++;
+  if (a.locationId !== b.locationId) changes++;
   if (a.budget !== b.budget) changes++;
   if (a.time !== b.time) changes++;
   if (a.transport !== b.transport) changes++;
@@ -34,13 +42,16 @@ function SkeletonCard() {
   );
 }
 
-export default function HomePage() {
-  const router = useRouter();
+export default function HomePage({ initialFilters }: HomePageProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [applied, setApplied] = useState<FilterDraft>(DEFAULT_FILTERS);
-  const [draft, setDraft] = useState<FilterDraft>(DEFAULT_FILTERS);
+  const [applied, setApplied] = useState<FilterDraft>(initialFilters);
+  const [draft, setDraft] = useState<FilterDraft>(initialFilters);
   const [fetchedFor, setFetchedFor] = useState<FilterDraft | null>(null);
   const [matches, setMatches] = useState<FoodMatch[]>([]);
+  const [moreMatches, setMoreMatches] = useState<VenueMatch[]>([]);
+  const [engine, setEngine] = useState<DecideResponseData["engine"]>("fallback");
+  const [locationLabel, setLocationLabel] = useState("");
+  const [showMore, setShowMore] = useState(false);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState("");
   const latestRequest = useRef(0);
@@ -50,7 +61,15 @@ export default function HomePage() {
     try {
       const data = await decide(toDecidePayload(filters));
       if (requestId !== latestRequest.current) return;
-      setMatches(data.recommendations.map((rec, index) => fromRecommendation(rec, index, filters.budget)));
+      setMatches(
+        data.recommendations.map((rec, index) =>
+          fromRecommendation(rec, index, filters.budget, data.locationLabel),
+        ),
+      );
+      setMoreMatches(data.moreMatches);
+      setEngine(data.engine);
+      setLocationLabel(data.locationLabel);
+      setShowMore(false);
       setFetchedFor(filters);
       setStatus("ready");
     } catch (err) {
@@ -63,8 +82,8 @@ export default function HomePage() {
   useEffect(() => {
     // Initial fetch on mount; state is only set after the request resolves.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadMatches(DEFAULT_FILTERS);
-  }, [loadMatches]);
+    void loadMatches(initialFilters);
+  }, [loadMatches, initialFilters]);
 
   const filtersChanged = fetchedFor ? countChanges(applied, fetchedFor) : 0;
   const stale = filtersChanged > 0;
@@ -72,7 +91,6 @@ export default function HomePage() {
   const applyFilters = () => {
     setApplied(draft);
     setSheetOpen(false);
-    if (draft.mode === "group") router.push("/group");
   };
 
   const updateResults = () => {
@@ -86,31 +104,32 @@ export default function HomePage() {
     : status === "loading"
       ? "Finding Meals..."
       : "Find My Optimal Meal";
+  const totalMatches = matches.length + moreMatches.length;
 
   return (
     <div className="bg-[#f0f3f6] text-on-surface antialiased min-h-screen flex justify-center">
       <div className="w-full max-w-[420px] bg-background min-h-screen flex flex-col relative shadow-2xl">
         <HomeHeader
-          budget={applied.budget}
-          time={applied.time}
-          transport={applied.transport}
+          filters={applied}
           onOpenFilters={() => {
             setDraft(applied);
             setSheetOpen(true);
           }}
         />
 
-        <main className="flex-1 px-3 pt-3 flex flex-col gap-3 pb-44">
+        <main className="flex-1 px-3 pt-3 flex flex-col gap-3 pb-24">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-1.5">
               <div className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center">
                 <MaterialIcon name="psychology" className="text-[15px]" />
               </div>
-              <h2 className="text-[15px] font-extrabold text-on-surface tracking-tight">Gemini AI Top Matches</h2>
+              <h2 className="text-[15px] font-extrabold text-on-surface tracking-tight">
+                {engine === "gemini" ? "Gemini AI Top Matches" : "Top Matches"}
+              </h2>
             </div>
             {status === "ready" ? (
               <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#E6F7ED] text-primary tabular-nums">
-                {matches.length} Ready
+                {totalMatches} Found
               </span>
             ) : null}
           </div>
@@ -140,21 +159,39 @@ export default function HomePage() {
             <div className="rounded-2xl border border-[#E9ECEF] bg-surface-container-lowest p-4 text-center">
               <p className="text-sm font-bold">No matches for these filters</p>
               <p className="text-xs text-on-surface-variant mt-1">
-                Try a higher budget, more time, or switch to Car / GrabBike.
+                Try another craving, a higher budget, more time, or switch to Drive.
               </p>
             </div>
           ) : null}
 
           <div className={`flex flex-col gap-3 transition-opacity ${status === "loading" ? "opacity-50" : ""}`}>
             {matches.map((match) => (
-              <FoodMatchCard key={match.id} match={match} />
+              <FoodMatchCard
+                insightLabel={engine === "gemini" ? "Gemini Insight" : "Why this pick"}
+                key={match.id}
+                match={match}
+              />
             ))}
+
+            {moreMatches.length > 0 ? (
+              <button
+                aria-expanded={showMore}
+                className="h-12 rounded-full border-[1.5px] border-primary text-primary text-sm font-bold flex items-center justify-center gap-1 hover:bg-[#E6F7ED] active:scale-[0.98] transition-transform tabular-nums"
+                onClick={() => setShowMore((open) => !open)}
+                type="button"
+              >
+                <span>{showMore ? "Show less" : `See more (${moreMatches.length})`}</span>
+                <MaterialIcon name={showMore ? "expand_less" : "expand_more"} className="text-[18px]" />
+              </button>
+            ) : null}
+
+            {showMore ? <MoreMatchesList locationLabel={locationLabel} matches={moreMatches} /> : null}
           </div>
         </main>
 
         <BottomNav
           active="explore"
-          actionBadge={status === "ready" ? `${matches.length} Options` : undefined}
+          actionBadge={status === "ready" ? `${totalMatches} Options` : undefined}
           actionLabel={actionLabel}
           disabled={status === "loading"}
           onAction={updateResults}

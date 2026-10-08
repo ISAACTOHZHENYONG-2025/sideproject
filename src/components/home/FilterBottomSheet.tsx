@@ -1,22 +1,8 @@
 "use client";
 
 import MaterialIcon from "@/components/ui/MaterialIcon";
-
-export type FilterDraft = {
-  mode: "single" | "group";
-  budget: number;
-  time: number;
-  transport: "walk" | "drive";
-  tags: string[];
-};
-
-export const DEFAULT_FILTERS: FilterDraft = {
-  mode: "single",
-  budget: 15,
-  time: 30,
-  transport: "walk",
-  tags: ["Halal"],
-};
+import { BUDGET_RANGE, DEFAULT_FILTERS, DIET_TAGS, TIME_OPTIONS, type FilterDraft } from "@/lib/filters";
+import { CAMPUS_LOCATIONS } from "@/lib/locations";
 
 type FilterBottomSheetProps = {
   open: boolean;
@@ -26,29 +12,14 @@ type FilterBottomSheetProps = {
   onApply: () => void;
 };
 
-const TIME_OPTIONS = [
-  { minutes: 15, label: "15 mins" },
-  { minutes: 30, label: "30 mins" },
-  { minutes: 45, label: "45 mins" },
-  { minutes: 60, label: "60+ mins" },
-];
-
-export const DIET_TAGS = [
-  { id: "Halal", label: "Halal (JAKIM)" },
-  { id: "Vegetarian", label: "Vegetarian" },
-  { id: "Vegan", label: "Vegan" },
-  { id: "No Seafood", label: "No Seafood" },
-  { id: "Budget Meal", label: "Budget Meal < RM10" },
-];
-
 const TRANSPORT_NOTES = {
   walk: {
     icon: "ℹ️",
-    text: "Prioritizes covered walkways & UM Shuttle Route A (Free student loop).",
+    text: "Walking time is worked out from where you are, at about 80 m a minute.",
   },
   drive: {
     icon: "🚗",
-    text: "Broadens radius to off-campus eateries & commercial plazas within a 15-min drive.",
+    text: "Adds off-campus spots in Bangsar and PJ; drive time is estimated from distance.",
   },
 } as const;
 
@@ -56,6 +27,9 @@ function budgetLabel(budget: number) {
   const tier = budget <= 10 ? "Bajet" : budget <= 18 ? "Standard" : "Feast";
   return `RM ${budget.toFixed(2)} (${tier})`;
 }
+
+const inputClass =
+  "w-full h-12 pl-11 pr-11 rounded-xl bg-surface-container-lowest border border-[#DEE2E6] text-sm text-on-surface placeholder:text-[#ADB5BD] outline-none transition-shadow focus:border-primary focus:shadow-[0_0_0_3px_rgba(0,177,79,0.15)] [&::-webkit-search-cancel-button]:hidden";
 
 const segmentClass = (active: boolean) =>
   `flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-full text-xs transition-all ${
@@ -109,29 +83,66 @@ export default function FilterBottomSheet({
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 pb-28 no-scrollbar">
           <div>
-            <p className="block text-[11px] font-bold uppercase tracking-wider text-[#6C757D] mb-1.5">
-              Optimization Mode
-            </p>
-            <div className="grid grid-cols-2 p-1 bg-[#F1F3F5] rounded-full gap-1">
-              <button
-                className={segmentClass(draft.mode === "single")}
-                onClick={() => onChange({ ...draft, mode: "single" })}
-                type="button"
+            <label className="text-xs font-bold text-on-surface mb-2 flex items-center gap-1.5" htmlFor="craving-input">
+              <MaterialIcon name="restaurant" className="text-primary text-[17px]" />
+              What are you craving?
+            </label>
+            <div className="relative">
+              <MaterialIcon
+                name="search"
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[20px] text-[#6C757D] pointer-events-none"
+              />
+              <input
+                autoComplete="off"
+                className={inputClass}
+                enterKeyHint="search"
+                id="craving-input"
+                maxLength={60}
+                onChange={(event) => onChange({ ...draft, craving: event.target.value })}
+                placeholder="Rice, noodles, fast food, mcd..."
+                type="search"
+                value={draft.craving}
+              />
+              {draft.craving ? (
+                <button
+                  aria-label="Clear craving"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center text-[#6C757D] hover:bg-[#F1F3F5]"
+                  onClick={() => onChange({ ...draft, craving: "" })}
+                  type="button"
+                >
+                  <MaterialIcon name="close" className="text-[18px]" />
+                </button>
+              ) : null}
+            </div>
+            <p className="text-[11px] text-[#6C757D] mt-1.5 px-1">Leave empty for anything.</p>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-on-surface mb-2 flex items-center gap-1.5" htmlFor="location-input">
+              <MaterialIcon name="location_on" className="text-primary text-[17px]" />
+              Where are you?
+            </label>
+            <div className="relative">
+              <MaterialIcon
+                name="apartment"
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[20px] text-[#6C757D] pointer-events-none"
+              />
+              <select
+                className={`${inputClass} appearance-none cursor-pointer`}
+                id="location-input"
+                onChange={(event) => onChange({ ...draft, locationId: event.target.value })}
+                value={draft.locationId}
               >
-                <span>🏃</span>
-                <span>Single Student</span>
-              </button>
-              <button
-                className={segmentClass(draft.mode === "group")}
-                onClick={() => onChange({ ...draft, mode: "group" })}
-                type="button"
-              >
-                <span>👥</span>
-                <span>Group Room</span>
-                <span className="px-1.5 rounded-full text-[9px] font-extrabold bg-[#FFB800] text-[#4A3200]">
-                  3 live
-                </span>
-              </button>
+                {CAMPUS_LOCATIONS.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.label} · {loc.name}
+                  </option>
+                ))}
+              </select>
+              <MaterialIcon
+                name="expand_more"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[20px] text-[#6C757D] pointer-events-none"
+              />
             </div>
           </div>
 
@@ -148,8 +159,8 @@ export default function FilterBottomSheet({
             <input
               className="w-full accent-primary h-2 cursor-pointer my-2"
               id="budget-input"
-              max={30}
-              min={5}
+              max={BUDGET_RANGE.max}
+              min={BUDGET_RANGE.min}
               onChange={(event) => onChange({ ...draft, budget: Number(event.target.value) })}
               step={1}
               type="range"

@@ -47,22 +47,27 @@ try {
 for (const path of ["/", "/group", "/filter"]) await page(path);
 
 // /api/decide
-for (const transportMode of ["walk_or_public", "private_vehicle"]) {
-  const { status, data } = await post("/api/decide", {
-    maxBudget: 15,
-    availableTimeMins: 30,
-    dietaryRestrictions: ["Halal"],
-    transportMode,
-  });
+const decideCases = [
+  { label: "walk, any craving", transportMode: "walk_or_public", craving: "", maxBudget: 15, availableTimeMins: 30, dietaryRestrictions: ["Halal"] },
+  { label: "drive, any craving", transportMode: "private_vehicle", craving: "", maxBudget: 15, availableTimeMins: 30, dietaryRestrictions: ["Halal"] },
+  { label: "noodles, RM10, halal", transportMode: "walk_or_public", craving: "noodles", maxBudget: 10, availableTimeMins: 30, dietaryRestrictions: ["Halal"] },
+];
+for (const { label, ...payload } of decideCases) {
+  const { status, data } = await post("/api/decide", { locationId: "kk12", ...payload });
   const recs = data.recommendations;
+  const more = data.moreMatches;
   report(
-    `POST /api/decide (${transportMode})`,
-    status === 200 && Array.isArray(recs) && recs.length > 0,
-    status === 200 ? `${recs?.length ?? 0} recommendations` : `status ${status}: ${data.error ?? ""}`,
+    `POST /api/decide (${label})`,
+    status === 200 && Array.isArray(recs) && Array.isArray(more),
+    status === 200 ? `${recs?.length ?? 0} top, ${more?.length ?? 0} more, engine ${data.engine}` : `status ${status}: ${data.error ?? ""}`,
   );
-  if (Array.isArray(recs)) {
-    const overBudget = recs.filter((r) => r.estimatedCostMYR > 15);
-    report(`  all within RM15 (${transportMode})`, overBudget.length === 0);
+  if (Array.isArray(recs) && Array.isArray(more)) {
+    const all = [...recs, ...more];
+    report(`  top picks <= 3 (${label})`, recs.length <= 3);
+    report(`  all within RM${payload.maxBudget} (${label})`, all.every((r) => r.estimatedCostMYR <= payload.maxBudget));
+    report(`  all within ${payload.availableTimeMins} mins (${label})`, all.every((r) => r.estimatedTimeMins <= payload.availableTimeMins));
+    report(`  all halal (${label})`, all.every((r) => r.isHalal));
+    report(`  all have a Maps link (${label})`, all.every((r) => /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&/.test(r.mapsUrl)));
   }
 }
 
