@@ -46,6 +46,13 @@ const PRICE_LEVEL_MYR: Record<string, number> = {
   PRICE_LEVEL_VERY_EXPENSIVE: 60,
 };
 const DEFAULT_PRICE_MYR = 12;
+// Places removed from Firestore by hand, so re-runs don't add them back.
+const EXCLUDED_PLACE_IDS = new Set([
+  "ChIJ00x1dABJzDERF_SXoN9OfTU", // "UM": not a food place
+  "ChIJpU8GKgBLzDERg9SUZYpxNSs", // As grocer: grocery shop
+  "ChIJz3YLAttLzDERo6nhGrc7X10", // RC Deaf Missions Malaysia: mainly a charity
+  "ChIJvYs81PBJzDERo2c1JXNRmvI", // OHMYKASEH
+]);
 const DEFAULT_PREP_MINS = 10;
 const DUPLICATE_DISTANCE_M = 60;
 
@@ -176,6 +183,7 @@ function buildServices(place: GooglePlace) {
 function toVenue(place: GooglePlace): ImportedVenue | null {
   const name = place.displayName?.text?.trim();
   if (!name || !place.location || place.businessStatus === "CLOSED_PERMANENTLY") return null;
+  if (EXCLUDED_PLACE_IDS.has(place.id)) return null;
   if (place.primaryType && !FOOD_PRIMARY_TYPE.test(place.primaryType)) return null;
 
   const avgPriceMYR = estimatePriceMYR(place);
@@ -186,7 +194,7 @@ function toVenue(place: GooglePlace): ImportedVenue | null {
     location: place.formattedAddress ?? name,
     avgPriceMYR,
     avgPrepTimeMins: DEFAULT_PREP_MINS,
-    isHalal: dietaryTags.includes("Halal"), // a guess; Google only marks some places as halal restaurants
+    isHalal: true, // halal by default for now; correct it in the venues sheet
     dietaryTags,
     menuItems: [{ itemName: "Typical meal", priceMYR: avgPriceMYR }], // /api/decide needs at least one item
     description: place.editorialSummary?.text,
