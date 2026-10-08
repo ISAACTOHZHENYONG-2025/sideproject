@@ -4,6 +4,7 @@ import { db } from "@/lib/firebase";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
 import { mapsUrlForVenueName } from "@/lib/maps";
+import { meetsDiet } from "@/lib/diet";
 
 export interface Participant {
   memberName: string;
@@ -173,6 +174,18 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Check Gemini API key
+    // Every member's diet filter must be met. The same rule as /api/decide: a venue passes only if it is
+    // marked as meeting it (an unchecked halal venue still passes, see src/lib/diet.ts).
+    const dietVenues = candidateVenues.filter((v) => meetsDiet(v, mergedDietaryRestrictions));
+    if (dietVenues.length === 0) {
+      return NextResponse.json(
+        {
+          error: `No venue meets everyone's diet requirements (${mergedDietaryRestrictions.join(", ")}). Ask someone to relax a filter, or mark more venues in the venues sheet.`,
+        },
+        { status: 404 }
+      );
+    }
+
     const apiKey =
       process.env.GEMINI_API_KEY ||
       process.env.NEXT_PUBLIC_GEMINI_API_KEY;
@@ -199,8 +212,8 @@ AGGREGATED GROUP BOTTLENECK CONSTRAINTS:
         mergedDietaryRestrictions.length > 0 ? mergedDietaryRestrictions.join(", ") : "None"
       } (Must satisfy EVERY participant's requirement, e.g. Halal, Vegetarian)
 
-CANDIDATE VENUES:
-${JSON.stringify(candidateVenues, null, 2)}
+CANDIDATE VENUES (already filtered so every one meets every member's diet requirements):
+${JSON.stringify(dietVenues, null, 2)}
 
 DECISION RULES:
 1. Select 1 "winningRecommendation" that satisfies the lowest budget, strictest time, transport limitation, and all dietary restrictions.
@@ -270,19 +283,18 @@ Provide your response adhering strictly to the structured schema.
     }
 
     // Heuristic Fallback Engine
-    const validCandidates = candidateVenues.filter((v) => {
-      if (mergedDietaryRestrictions.includes("Halal") && !v.isHalal) return false;
+    const validCandidates = dietVenues.filter((v) => {
       const cheapItem = v.menuItems?.find((m) => m.priceMYR <= strictBudgetCap);
       return Boolean(cheapItem);
     });
 
-    const winnerVenue = validCandidates[0] || candidateVenues[0];
+    const winnerVenue = validCandidates[0] || dietVenues[0];
     const suitableItems = (winnerVenue?.menuItems || [])
       .filter((m) => m.priceMYR <= strictBudgetCap)
       .map((m) => m.itemName);
 
     const winnerItems = suitableItems.length > 0 ? suitableItems : ["Daily Set Meal"];
-    const backupVenue = validCandidates[1] || candidateVenues[1] || winnerVenue;
+    const backupVenue = validCandidates[1] || dietVenues[1] || winnerVenue;
     const backupItems = (backupVenue?.menuItems || [])
       .filter((m) => m.priceMYR <= strictBudgetCap)
       .map((m) => m.itemName);
