@@ -48,11 +48,14 @@ for (const path of ["/", "/group", "/filter"]) await page(path);
 
 // /api/decide
 const decideCases = [
-  { label: "walk, any craving", transportMode: "walk_or_public", craving: "", maxBudget: 15, availableTimeMins: 30, dietaryRestrictions: ["Halal"] },
-  { label: "drive, any craving", transportMode: "private_vehicle", craving: "", maxBudget: 15, availableTimeMins: 30, dietaryRestrictions: ["Halal"] },
-  { label: "vegetarian", transportMode: "walk_or_public", craving: "", maxBudget: 30, availableTimeMins: 60, dietaryRestrictions: ["Vegetarian"] },
-  { label: "vegan + no seafood", transportMode: "walk_or_public", craving: "", maxBudget: 30, availableTimeMins: 60, dietaryRestrictions: ["Vegan", "No Seafood"] },
-  { label: "noodles, RM10, halal", transportMode: "walk_or_public", craving: "noodles", maxBudget: 10, availableTimeMins: 30, dietaryRestrictions: ["Halal"] },
+  { label: "within 3 km, any craving", craving: "", maxBudget: 15, maxDistanceKm: 3, dietaryRestrictions: ["Halal"] },
+  { label: "within 1 km", craving: "", maxBudget: 15, maxDistanceKm: 1, dietaryRestrictions: ["Halal"] },
+  { label: "any distance", craving: "", maxBudget: 30, maxDistanceKm: null, dietaryRestrictions: [] },
+  { label: "vegetarian", craving: "", maxBudget: 30, maxDistanceKm: null, dietaryRestrictions: ["Vegetarian"] },
+  { label: "vegan + no seafood", craving: "", maxBudget: 30, maxDistanceKm: null, dietaryRestrictions: ["Vegan", "No Seafood"] },
+  { label: "noodles, RM10, halal", craving: "noodles", maxBudget: 10, maxDistanceKm: 3, dietaryRestrictions: ["Halal"] },
+  { label: "accented craving", craving: "café", maxBudget: 30, maxDistanceKm: 3, dietaryRestrictions: [] },
+  { label: "non-Latin craving", craving: "面", maxBudget: 30, maxDistanceKm: 3, dietaryRestrictions: [] },
 ];
 for (const { label, ...payload } of decideCases) {
   const { status, data } = await post("/api/decide", payload);
@@ -67,7 +70,9 @@ for (const { label, ...payload } of decideCases) {
     const all = [...recs, ...more];
     report(`  top picks <= 3 (${label})`, recs.length <= 3);
     report(`  all within RM${payload.maxBudget} (${label})`, all.every((r) => r.estimatedCostMYR <= payload.maxBudget));
-    report(`  all within ${payload.availableTimeMins} mins (${label})`, all.every((r) => r.estimatedTimeMins <= payload.availableTimeMins));
+    if (payload.maxDistanceKm !== null) {
+      report(`  all within ${payload.maxDistanceKm} km (${label})`, all.every((r) => r.distanceMeters === undefined || r.distanceMeters <= payload.maxDistanceKm * 1000));
+    }
     if (payload.dietaryRestrictions.includes("Vegetarian")) report(`  all vegetarian (${label})`, all.every((r) => r.isVegetarian));
     if (payload.dietaryRestrictions.includes("Vegan")) report(`  all vegan (${label})`, all.every((r) => r.isVegan));
     report(`  all have a Maps link (${label})`, all.every((r) => /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&/.test(r.mapsUrl)));

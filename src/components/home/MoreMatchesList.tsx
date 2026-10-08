@@ -21,10 +21,7 @@ export default function MoreMatchesList({ matches }: MoreMatchesListProps) {
               </div>
               <p className="text-[11px] text-on-surface-variant mt-0.5 tabular-nums">
                 <span className="font-bold text-primary">RM {match.estimatedCostMYR.toFixed(2)}</span>
-                {" · "}
-                {distance ?? match.travelMethod}
-                {" · "}
-                {match.estimatedTimeMins} min total
+                {distance ? ` · ${distance}` : ""}
               </p>
               {match.allergyNotes ? (
                 <p className="text-[11px] text-[#D84315] mt-0.5 flex items-start gap-1">

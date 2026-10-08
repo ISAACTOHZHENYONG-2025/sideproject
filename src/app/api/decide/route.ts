@@ -5,18 +5,18 @@ import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
 import { googleMapsUrl } from "@/lib/maps";
 import { meetsDiet } from "@/lib/diet";
-import { UM_CAMPUS_CENTER, distanceMeters, driveMinutes, walkMinutes } from "@/lib/geo";
+import { UM_CAMPUS_CENTER, distanceMeters, formatDistance } from "@/lib/geo";
 
 export interface DecideRequestPayload {
   // Free text such as "noodles" or "mcd"; empty means anything.
   craving?: string;
   maxBudget: number;
-  availableTimeMins: number;
+  // Straight-line distance from the UM campus centre; null means any distance.
+  maxDistanceKm?: number | null;
   dietaryRestrictions: string[];
-  transportMode: "walk_or_public" | "private_vehicle";
 }
 
-// A venue that fits the student's budget, diet and time.
+// A venue that fits the student's budget, diet and distance.
 export interface VenueMatch {
   venueName: string;
   estimatedCostMYR: number;
@@ -29,10 +29,6 @@ export interface VenueMatch {
   rating?: number;
   // Straight-line distance from the UM campus centre; absent when the venue has no coordinates.
   distanceMeters?: number;
-  travelMins: number;
-  travelMethod: string;
-  // Travel + prep time
-  estimatedTimeMins: number;
   // Google Maps directions link; Maps works out the route from the user's location.
   mapsUrl: string;
 }
@@ -47,7 +43,7 @@ export interface DecideResponseData {
   engine: "gemini" | "fallback";
 }
 
-// Off-campus spots only offered when the student can drive. Coordinates are from Google Places.
+// Off-campus spots, included whenever they are within the chosen distance. Coordinates are from Google Places.
 const OFF_CAMPUS_DRIVING_HOTSPOTS: Venue[] = [
   {
     name: "Village Park Restaurant",
@@ -142,9 +138,14 @@ const FALLBACK_CAMPUS_VENUES: Venue[] = [
   },
 ];
 
-// Travel time assumed for hand-seeded venues that have no coordinates yet.
-const UNKNOWN_TRAVEL_MINS = 10;
-const DEFAULT_PREP_MINS = 10;
+// Distance assumed for hand-seeded venues that have no coordinates yet (they are on campus).
+const UNKNOWN_DISTANCE_M = 800;
+const DEFAULT_MAX_DISTANCE_KM = 3;
+// Ranking treats venues within the same 300 m band as equally near.
+const DISTANCE_BAND_M = 300;
+// Most venues sent to Gemini in one request; keeps searches fast and cheap as the venue list grows.
+const GEMINI_CANDIDATE_CAP = 40;
+const VENUE_CACHE_MS = 60_000;
 const PLACEHOLDER_MENU_ITEM = "Typical meal";
 
 // What students type → words that show up in venue names, serves, tags and menus.
@@ -179,6 +180,8 @@ function chainKey(name: string) {
   return first && !GENERIC_FIRST_WORDS.has(first) ? first : normalised;
 }
 
+const nearness = (c: Candidate) => c.match.distanceMeters ?? UNKNOWN_DISTANCE_M;
+
 // Top 3 holds at most one branch per chain, always that chain's nearest branch in the list;
 // every other candidate, other branches included, keeps its order in moreMatches.
 function pickTopThree(ranked: Ranked[]): { top: Ranked[]; rest: Ranked[] } {
@@ -192,7 +195,7 @@ function pickTopThree(ranked: Ranked[]): { top: Ranked[]; rest: Ranked[] } {
     seenChains.add(key);
     const nearest = ranked
       .filter((r) => !used.has(r) && chainKey(r.candidate.venue.name) === key)
-      .reduce((a, b) => (b.candidate.match.travelMins < a.candidate.match.travelMins ? b : a));
+      .reduce((a, b) => (nearness(b.candidate) < nearness(a.candidate) ? b : a));
     used.add(nearest);
     // A nearer branch swapped in keeps the reason given for the chain
     top.push({ candidate: nearest.candidate, reasoning: entry.reasoning ?? nearest.reasoning });
@@ -204,31 +207,47 @@ function escapeRegExp(text: string) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Lowercase and drop accents from Latin letters ("Café" -> "cafe") so spellings match; other scripts are kept.
+function fold(text: string) {
+  return text
+    .normalize("NFKD")
+    .replace(/(\p{Script=Latin})\p{M}+/gu, "$1")
+    .normalize("NFKC")
+    .toLowerCase();
+}
+
 function cravingPatterns(craving: string): RegExp[] {
-  const key = craving.trim().toLowerCase().replace(/[^a-z0-9 ]+/g, "").replace(/s$/, "");
+  const key = fold(craving).replace(/[^\p{L}\p{N} ]+/gu, "").replace(/\s+/g, " ").trim().replace(/s$/, "");
   if (!key) return [];
   const terms = [key, ...(CRAVING_ALIASES[key] ?? [])];
-  return terms.map((term) => new RegExp(`\\b${escapeRegExp(term)}s?\\b`, "i"));
+  return terms.map((term) => {
+    const folded = escapeRegExp(fold(term));
+    // Latin terms must match whole words ("rice" is not "price"). Other scripts (Chinese, Japanese, ...) don't
+    // put spaces between words, so they match anywhere in the text.
+    return /[^\p{Script=Latin}\p{N}\s]/u.test(term)
+      ? new RegExp(folded, "iu")
+      : new RegExp(`(?<![\\p{L}\\p{N}])${folded}s?(?![\\p{L}\\p{N}])`, "iu");
+  });
 }
 
 function venueSearchText(venue: Venue) {
-  return [
-    venue.name,
-    venue.cuisine ?? "",
-    venue.description ?? "",
-    ...(venue.serves ?? []),
-    ...(venue.dietaryTags ?? []),
-    ...(venue.menuItems ?? []).map((m) => m.itemName).filter((name) => name !== PLACEHOLDER_MENU_ITEM),
-  ].join(" | ");
+  return fold(
+    [
+      venue.name,
+      venue.cuisine ?? "",
+      venue.description ?? "",
+      ...(venue.serves ?? []),
+      ...(venue.dietaryTags ?? []),
+      ...(venue.menuItems ?? []).map((m) => m.itemName).filter((name) => name !== PLACEHOLDER_MENU_ITEM),
+    ].join(" | "),
+  );
 }
 
-function toVenueMatch(venue: Venue, drive: boolean): VenueMatch {
+function toVenueMatch(venue: Venue): VenueMatch {
   const hasCoords = typeof venue.latitude === "number" && typeof venue.longitude === "number";
   const meters = hasCoords
     ? Math.round(distanceMeters(UM_CAMPUS_CENTER, { latitude: venue.latitude!, longitude: venue.longitude! }))
     : undefined;
-  const travelMins =
-    meters === undefined ? UNKNOWN_TRAVEL_MINS : drive ? driveMinutes(meters) : walkMinutes(meters);
 
   return {
     venueName: venue.name,
@@ -240,16 +259,13 @@ function toVenueMatch(venue: Venue, drive: boolean): VenueMatch {
     serves: venue.serves ?? [],
     rating: venue.rating,
     distanceMeters: meters,
-    travelMins,
-    travelMethod: `${travelMins}-min ${drive ? "drive" : "walk"}`,
-    estimatedTimeMins: travelMins + (venue.avgPrepTimeMins || DEFAULT_PREP_MINS),
     mapsUrl: googleMapsUrl(venue),
   };
 }
 
-// Code-only ranking: nearest first (in 5-minute bands), then best rated, then cheapest.
+// Code-only ranking: nearest first (in 300 m bands), then best rated, then cheapest.
 function rankByDistanceAndRating(a: Candidate, b: Candidate) {
-  const band = (c: Candidate) => Math.round(c.match.travelMins / 5);
+  const band = (c: Candidate) => Math.round(nearness(c) / DISTANCE_BAND_M);
   return (
     band(a) - band(b) ||
     (b.match.rating ?? 0) - (a.match.rating ?? 0) ||
@@ -257,11 +273,12 @@ function rankByDistanceAndRating(a: Candidate, b: Candidate) {
   );
 }
 
-function fallbackReason(c: Candidate, craving: string) {
-  const parts = [`${c.match.travelMethod} from campus centre`, `about RM${c.match.estimatedCostMYR.toFixed(2)}`];
+function fallbackReason(c: Candidate, craving: string, hasPatterns: boolean) {
+  const parts = [`about RM${c.match.estimatedCostMYR.toFixed(2)}`];
+  if (c.match.distanceMeters !== undefined) parts.unshift(`${formatDistance(c.match.distanceMeters)} from campus centre`);
   if (c.match.isHalal) parts.push("halal");
   if (c.match.rating) parts.push(`rated ${c.match.rating.toFixed(1)}`);
-  const lead = craving ? `Matches "${craving}": ` : "";
+  const lead = hasPatterns ? `Matches "${craving}": ` : "";
   return `${lead}${parts.join(", ")}.`;
 }
 
@@ -284,16 +301,14 @@ async function rankWithGemini(
     halal: match.isHalal,
     rating: match.rating ?? null,
     distanceMeters: match.distanceMeters ?? null,
-    travel: match.travelMethod,
-    totalMins: match.estimatedTimeMins,
   }));
 
   const prompt = `
 You pick where a Universiti Malaya student should eat. Every venue below already fits their budget,
-time and halal requirement, so judge them only on the craving, distance, rating and price.
+diet requirements and distance, so judge them only on the craving, distance, rating and price.
 
 Student:
-- Location: somewhere on the Universiti Malaya campus; distances and travel times are from the campus centre
+- Location: somewhere on the Universiti Malaya campus; distances are from the campus centre
 - Craving: ${craving || "anything (no preference)"}
 - Diet filters already applied in code (every venue below meets them): ${dietaryRestrictions.join(", ") || "none"}
 
@@ -371,38 +386,55 @@ ${JSON.stringify(venues)}
   return ranked;
 }
 
+// Venue list cached in memory for a minute, so busy periods don't re-read every venue on every tap.
+let venueCache: { at: number; venues: Venue[] } | undefined;
+
+async function loadVenues(): Promise<Venue[]> {
+  if (venueCache && Date.now() - venueCache.at < VENUE_CACHE_MS) return venueCache.venues;
+  const venues: Venue[] = [];
+  if (db) {
+    try {
+      const snapshot = await getDocs(collection(db, "venues"));
+      snapshot.forEach((docSnap) => {
+        venues.push({ id: docSnap.id, ...(docSnap.data() as Omit<Venue, "id">) });
+      });
+      venueCache = { at: Date.now(), venues };
+    } catch (err) {
+      console.warn("Could not fetch venues from Firestore, proceeding with fallback:", err);
+    }
+  }
+  return venues;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as Partial<DecideRequestPayload>;
 
     const craving = String(body.craving ?? "").trim().slice(0, 60);
     const maxBudget = Number(body.maxBudget ?? 15);
-    const availableTimeMins = Number(body.availableTimeMins ?? 30);
     const dietaryRestrictions = Array.isArray(body.dietaryRestrictions) ? body.dietaryRestrictions : [];
-    const drive = body.transportMode === "private_vehicle";
+    const maxDistanceKm =
+      body.maxDistanceKm === null
+        ? null
+        : typeof body.maxDistanceKm === "number" && body.maxDistanceKm > 0
+          ? body.maxDistanceKm
+          : DEFAULT_MAX_DISTANCE_KM;
+    const patterns = cravingPatterns(craving);
 
-    // 1. Load venues from Firestore
-    let venues: Venue[] = [];
-    if (db) {
-      try {
-        const snapshot = await getDocs(collection(db, "venues"));
-        snapshot.forEach((docSnap) => {
-          venues.push({ id: docSnap.id, ...(docSnap.data() as Omit<Venue, "id">) });
-        });
-      } catch (err) {
-        console.warn("Could not fetch venues from Firestore, proceeding with fallback:", err);
-      }
-    }
+    // 1. Load venues from Firestore (cached briefly so every tap doesn't re-read the whole collection)
+    let venues = await loadVenues();
     if (venues.length === 0) venues = FALLBACK_CAMPUS_VENUES;
-    if (drive) venues = [...venues, ...OFF_CAMPUS_DRIVING_HOTSPOTS];
+    const knownPlaceIds = new Set(venues.map((v) => v.placeId).filter(Boolean));
+    venues = [...venues, ...OFF_CAMPUS_DRIVING_HOTSPOTS.filter((v) => !knownPlaceIds.has(v.placeId))];
 
-    // 2. Drop venues that can't work: over budget, miss a ticked diet filter, or not enough time
+    // 2. Drop venues that can't work: over budget, miss a ticked diet filter, or too far.
+    // Venues with no coordinates are the hand-seeded on-campus ones, so the distance filter keeps them.
     const candidates: Candidate[] = venues
-      .map((venue) => ({ venue, match: toVenueMatch(venue, drive) }))
+      .map((venue) => ({ venue, match: toVenueMatch(venue) }))
       .filter(({ venue, match }) => {
         if (!(venue.avgPriceMYR <= maxBudget)) return false;
         if (!meetsDiet(venue, dietaryRestrictions)) return false;
-        return match.estimatedTimeMins <= availableTimeMins;
+        return maxDistanceKm === null || match.distanceMeters === undefined || match.distanceMeters <= maxDistanceKm * 1000;
       });
 
     const respond = (engine: DecideResponseData["engine"], ranked: Ranked[]) => {
@@ -411,7 +443,7 @@ export async function POST(req: NextRequest) {
         {
           recommendations: top.map(({ candidate, reasoning }) => ({
             ...candidate.match,
-            reasoning: reasoning ?? fallbackReason(candidate, craving),
+            reasoning: reasoning ?? fallbackReason(candidate, craving, patterns.length > 0),
           })),
           moreMatches: rest.map(({ candidate }) => candidate.match),
           engine,
@@ -426,8 +458,15 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
     if (apiKey) {
       try {
-        const ranked = await rankWithGemini(apiKey, candidates, craving, dietaryRestrictions);
-        if (ranked.length > 0) return respond("gemini", ranked);
+        // Send Gemini the 40 most promising venues (keyword matches first, then nearest); the rest follow
+        // in code order. With a craving, only keyword matches are added back, as Gemini would have dropped the rest.
+        const matchesCraving = (c: Candidate) => patterns.length === 0 || patterns.some((p) => p.test(venueSearchText(c.venue)));
+        const ordered = [...candidates].sort(
+          (a, b) => Number(matchesCraving(b)) - Number(matchesCraving(a)) || rankByDistanceAndRating(a, b),
+        );
+        const overflow = ordered.slice(GEMINI_CANDIDATE_CAP).filter(matchesCraving);
+        const ranked = await rankWithGemini(apiKey, ordered.slice(0, GEMINI_CANDIDATE_CAP), craving, dietaryRestrictions);
+        if (ranked.length > 0) return respond("gemini", [...ranked, ...overflow.map((candidate) => ({ candidate }))]);
         console.warn("Gemini returned no usable venues, using code-only fallback");
       } catch (err) {
         console.warn("Gemini ranking failed, using code-only fallback:", err);
@@ -435,7 +474,6 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Code-only fallback: match the craving against serves, name, tags and menu, then rank
-    const patterns = cravingPatterns(craving);
     const ranked = candidates
       .filter(({ venue }) => {
         if (patterns.length === 0) return true;

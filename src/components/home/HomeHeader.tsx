@@ -42,11 +42,8 @@ export default function HomeHeader({ filters, onOpenFilters }: HomeHeaderProps) 
           <span>Max RM{filters.budget}</span>
         </button>
         <button className={`${chipClass} tabular-nums`} onClick={onOpenFilters} type="button">
-          <span className="text-xs">⏱️</span>
-          <span>{filters.time} mins</span>
-        </button>
-        <button className={chipClass} onClick={onOpenFilters} type="button">
-          <span>{filters.transport === "walk" ? "🚶 Walk" : "🚗 Drive"}</span>
+          <MaterialIcon name="near_me" className="text-[13px] text-emerald-600" />
+          <span>{filters.maxDistanceKm === null ? "Any distance" : `Within ${filters.maxDistanceKm} km`}</span>
         </button>
         {filters.tags
           .filter((tag) => tag !== "Budget Meal")

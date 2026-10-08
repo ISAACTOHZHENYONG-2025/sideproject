@@ -1,7 +1,7 @@
 "use client";
 
 import MaterialIcon from "@/components/ui/MaterialIcon";
-import { BUDGET_RANGE, DEFAULT_FILTERS, DIET_TAGS, TIME_OPTIONS, type FilterDraft } from "@/lib/filters";
+import { BUDGET_RANGE, DEFAULT_FILTERS, DIET_TAGS, DISTANCE_OPTIONS, type FilterDraft } from "@/lib/filters";
 
 type FilterBottomSheetProps = {
   open: boolean;
@@ -11,17 +11,6 @@ type FilterBottomSheetProps = {
   onApply: () => void;
 };
 
-const TRANSPORT_NOTES = {
-  walk: {
-    icon: "ℹ️",
-    text: "Walk times are estimated from the campus centre; Google Maps gives your exact route.",
-  },
-  drive: {
-    icon: "🚗",
-    text: "Adds off-campus spots in Bangsar and PJ; drive time is estimated from distance.",
-  },
-} as const;
-
 function budgetLabel(budget: number) {
   const tier = budget <= 10 ? "Bajet" : budget <= 18 ? "Standard" : "Feast";
   return `RM ${budget.toFixed(2)} (${tier})`;
@@ -29,13 +18,6 @@ function budgetLabel(budget: number) {
 
 const inputClass =
   "w-full h-12 pl-11 pr-11 rounded-xl bg-surface-container-lowest border border-[#DEE2E6] text-sm text-on-surface placeholder:text-[#ADB5BD] outline-none transition-shadow focus:border-primary focus:shadow-[0_0_0_3px_rgba(0,177,79,0.15)] [&::-webkit-search-cancel-button]:hidden";
-
-const segmentClass = (active: boolean) =>
-  `flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-full text-xs transition-all ${
-    active
-      ? "font-bold bg-surface-container-lowest text-primary shadow-[0_2px_8px_rgba(30,35,41,0.04)]"
-      : "font-semibold text-[#6C757D] hover:text-on-surface"
-  }`;
 
 export default function FilterBottomSheet({
   open,
@@ -144,16 +126,13 @@ export default function FilterBottomSheet({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold text-on-surface flex items-center gap-1.5">
-                <MaterialIcon name="schedule" className="text-tertiary-container text-[17px]" />
-                Lecture Gap / Available Time
-              </p>
-              <span className="text-[11px] text-[#6C757D] font-medium">Prep + Walk included</span>
-            </div>
+            <p className="text-xs font-bold text-on-surface mb-2 flex items-center gap-1.5">
+              <MaterialIcon name="near_me" className="text-primary text-[17px]" />
+              How far will you go?
+            </p>
             <div className="grid grid-cols-4 gap-2">
-              {TIME_OPTIONS.map(({ minutes, label }) => {
-                const selected = draft.time === minutes;
+              {DISTANCE_OPTIONS.map(({ km, label }) => {
+                const selected = draft.maxDistanceKm === km;
                 return (
                   <button
                     aria-pressed={selected}
@@ -162,8 +141,8 @@ export default function FilterBottomSheet({
                         ? "font-bold bg-primary text-white shadow-sm"
                         : "font-semibold bg-[#F1F3F5] text-[#495057] hover:bg-[#E9ECEF]"
                     }`}
-                    key={minutes}
-                    onClick={() => onChange({ ...draft, time: minutes })}
+                    key={label}
+                    onClick={() => onChange({ ...draft, maxDistanceKm: km })}
                     type="button"
                   >
                     {label}
@@ -171,34 +150,8 @@ export default function FilterBottomSheet({
                 );
               })}
             </div>
-          </div>
-
-          <div>
-            <p className="text-xs font-bold text-on-surface mb-2 flex items-center gap-1.5">
-              <MaterialIcon name="directions_walk" className="text-primary text-[17px]" />
-              Campus Mobility
-            </p>
-            <div className="grid grid-cols-2 p-1 bg-[#F1F3F5] rounded-full gap-1">
-              <button
-                className={segmentClass(draft.transport === "walk")}
-                onClick={() => onChange({ ...draft, transport: "walk" })}
-                type="button"
-              >
-                <span className="text-sm">🚶</span>
-                <span>Walk / Shuttle Bus</span>
-              </button>
-              <button
-                className={segmentClass(draft.transport === "drive")}
-                onClick={() => onChange({ ...draft, transport: "drive" })}
-                type="button"
-              >
-                <span className="text-sm">🚗</span>
-                <span>Car / GrabBike</span>
-              </button>
-            </div>
-            <p className="text-[11px] text-[#6C757D] mt-2 px-1 flex items-start gap-1">
-              <span className="text-primary font-bold">{TRANSPORT_NOTES[draft.transport].icon}</span>
-              <span>{TRANSPORT_NOTES[draft.transport].text}</span>
+            <p className="text-[11px] text-[#6C757D] mt-2 px-1">
+              Measured from the campus centre. Google Maps gives your real route by walking, bus, LRT or car.
             </p>
           </div>
 

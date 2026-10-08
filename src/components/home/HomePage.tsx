@@ -22,8 +22,7 @@ function countChanges(a: FilterDraft, b: FilterDraft) {
   let changes = 0;
   if (a.craving.trim().toLowerCase() !== b.craving.trim().toLowerCase()) changes++;
   if (a.budget !== b.budget) changes++;
-  if (a.time !== b.time) changes++;
-  if (a.transport !== b.transport) changes++;
+  if (a.maxDistanceKm !== b.maxDistanceKm) changes++;
   if ([...a.tags].sort().join() !== [...b.tags].sort().join()) changes++;
   return changes;
 }
@@ -151,7 +150,7 @@ export default function HomePage({ initialFilters }: HomePageProps) {
             <div className="rounded-2xl border border-[#E9ECEF] bg-surface-container-lowest p-4 text-center">
               <p className="text-sm font-bold">No matches for these filters</p>
               <p className="text-xs text-on-surface-variant mt-1">
-                Try another craving, a higher budget, more time, or switch to Drive.
+                Try another craving, a higher budget, or a longer distance.
               </p>
             </div>
           ) : null}

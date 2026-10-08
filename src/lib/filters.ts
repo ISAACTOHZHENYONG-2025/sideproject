@@ -1,26 +1,25 @@
 export type FilterDraft = {
   craving: string;
   budget: number;
-  time: number;
-  transport: "walk" | "drive";
+  // Straight-line distance from the campus centre; null means any distance
+  maxDistanceKm: number | null;
   tags: string[];
 };
 
 export const DEFAULT_FILTERS: FilterDraft = {
   craving: "",
   budget: 15,
-  time: 30,
-  transport: "walk",
+  maxDistanceKm: 3,
   tags: ["Halal"],
 };
 
 export const BUDGET_RANGE = { min: 5, max: 30 };
 
-export const TIME_OPTIONS = [
-  { minutes: 15, label: "15 mins" },
-  { minutes: 30, label: "30 mins" },
-  { minutes: 45, label: "45 mins" },
-  { minutes: 60, label: "60+ mins" },
+export const DISTANCE_OPTIONS: { km: number | null; param: string; label: string }[] = [
+  { km: 1, param: "1", label: "1 km" },
+  { km: 3, param: "3", label: "3 km" },
+  { km: 5, param: "5", label: "5 km" },
+  { km: null, param: "any", label: "Any" },
 ];
 
 export const DIET_TAGS = [
@@ -36,8 +35,7 @@ export function filtersToSearchParams(filters: FilterDraft): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.craving.trim()) params.set("craving", filters.craving.trim());
   params.set("budget", String(filters.budget));
-  params.set("time", String(filters.time));
-  params.set("transport", filters.transport);
+  params.set("dist", DISTANCE_OPTIONS.find((o) => o.km === filters.maxDistanceKm)?.param ?? "3");
   params.set("tags", filters.tags.join(","));
   return params;
 }
@@ -50,7 +48,7 @@ export function filtersFromSearchParams(params: SearchParams): FilterDraft {
     return Array.isArray(value) ? value[0] : value;
   };
   const budget = Number(get("budget"));
-  const time = Number(get("time"));
+  const dist = DISTANCE_OPTIONS.find((o) => o.param === get("dist"));
   const tags = get("tags");
 
   return {
@@ -59,8 +57,7 @@ export function filtersFromSearchParams(params: SearchParams): FilterDraft {
       Number.isFinite(budget) && budget >= BUDGET_RANGE.min && budget <= BUDGET_RANGE.max
         ? budget
         : DEFAULT_FILTERS.budget,
-    time: TIME_OPTIONS.some((o) => o.minutes === time) ? time : DEFAULT_FILTERS.time,
-    transport: get("transport") === "drive" ? "drive" : DEFAULT_FILTERS.transport,
+    maxDistanceKm: dist ? dist.km : DEFAULT_FILTERS.maxDistanceKm,
     tags:
       tags === undefined
         ? DEFAULT_FILTERS.tags

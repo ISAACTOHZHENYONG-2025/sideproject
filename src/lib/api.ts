@@ -45,8 +45,7 @@ export function toDecidePayload(filters: FilterDraft): DecideRequestPayload {
   return {
     craving: filters.craving.trim(),
     maxBudget: filters.tags.includes("Budget Meal") ? Math.min(filters.budget, 10) : filters.budget,
-    availableTimeMins: filters.time,
+    maxDistanceKm: filters.maxDistanceKm,
     dietaryRestrictions: filters.tags.filter((tag) => !NON_DIETARY_TAGS.includes(tag)),
-    transportMode: filters.transport === "drive" ? "private_vehicle" : "walk_or_public",
   };
 }

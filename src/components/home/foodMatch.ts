@@ -13,9 +13,8 @@ export type FoodMatch = {
   allergyNotes?: string;
   // e.g. "650 m from campus centre"; absent when the venue has no coordinates
   distanceLabel?: string;
-  travelIcon: string;
-  travelLabel: string;
-  duration: string;
+  // e.g. "650 m", for the card badge
+  distanceShort?: string;
   serves: string;
   insight: string;
   mapsUrl: string;
@@ -39,9 +38,7 @@ export function fromRecommendation(rec: RecommendationItem, index: number, budge
     isVegan: rec.isVegan,
     allergyNotes: rec.allergyNotes,
     distanceLabel: distanceLabel(rec),
-    travelIcon: rec.travelMethod.endsWith("drive") ? "directions_car" : "directions_walk",
-    travelLabel: rec.travelMethod,
-    duration: `${rec.estimatedTimeMins} min total`,
+    distanceShort: rec.distanceMeters === undefined ? undefined : formatDistance(rec.distanceMeters),
     serves: rec.serves.join(", "),
     insight: rec.reasoning,
     mapsUrl: rec.mapsUrl,

@@ -20,10 +20,12 @@ export default function FoodMatchCard({ match, insightLabel }: FoodMatchCardProp
           />
           <span className="text-[11px] font-medium text-slate-500 mt-1">Tap to upload stall photo</span>
         </div>
-        <div className="absolute top-2.5 left-2.5 flex items-center gap-1 bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-full shadow-sm text-[11px] font-bold text-slate-800 tabular-nums">
-          <MaterialIcon name={match.travelIcon} className="text-[14px] text-primary" />
-          <span>{match.travelLabel}</span>
-        </div>
+        {match.distanceShort ? (
+          <div className="absolute top-2.5 left-2.5 flex items-center gap-1 bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-full shadow-sm text-[11px] font-bold text-slate-800 tabular-nums">
+            <MaterialIcon name="location_on" className="text-[14px] text-primary" />
+            <span>{match.distanceShort}</span>
+          </div>
+        ) : null}
         <div
           className={`absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full text-white text-[10px] font-extrabold tracking-wide shadow-sm ${
             isTop ? "bg-emerald-500" : "bg-slate-700"
@@ -68,10 +70,6 @@ export default function FoodMatchCard({ match, insightLabel }: FoodMatchCardProp
               <span className="text-[11px] font-semibold text-slate-500">Typical meal price shown</span>
             )}
           </div>
-          <div className="text-right shrink-0 text-[11px] font-semibold text-slate-600 flex items-center gap-0.5 tabular-nums">
-            <MaterialIcon name="schedule" className="text-[14px] text-primary" />
-            <span>{match.duration}</span>
-          </div>
         </div>
 
         <div className="rounded-xl p-2.5 bg-amber-50/80 border border-amber-200 text-amber-950 flex items-start gap-2">
@@ -91,7 +89,7 @@ export default function FoodMatchCard({ match, insightLabel }: FoodMatchCardProp
         ) : null}
 
         <a
-          className="h-11 px-3 rounded-full bg-primary hover:bg-primary-dark text-white text-[13px] font-bold flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-transform"
+          className="h-12 px-3 rounded-full bg-primary hover:bg-primary-dark text-white text-[14px] font-bold flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-transform"
           href={match.mapsUrl}
           target="_blank"
           rel="noopener noreferrer"
