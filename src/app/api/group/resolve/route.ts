@@ -3,6 +3,7 @@ import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
+import { mapsUrlForVenueName } from "@/lib/maps";
 
 export interface Participant {
   memberName: string;
@@ -17,6 +18,8 @@ export interface WinningRecommendation {
   recommendedItems: string[];
   totalCostPerPersonMYR: number;
   consensusReasoning: string;
+  // Google Maps directions link; Maps works out the route from the user's location.
+  mapsUrl?: string;
 }
 
 export interface BackupOption {
@@ -24,11 +27,24 @@ export interface BackupOption {
   recommendedItems: string[];
   totalCostPerPersonMYR: number;
   consensusReasoning: string;
+  // Google Maps directions link; Maps works out the route from the user's location.
+  mapsUrl?: string;
 }
 
 export interface GroupResolveResponse {
   winningRecommendation: WinningRecommendation;
   backupOptions: BackupOption[];
+}
+
+function withMapsUrls(result: GroupResolveResponse, venues: Venue[]): GroupResolveResponse {
+  const addUrl = <T extends { venueName: string }>(pick: T) => ({
+    ...pick,
+    mapsUrl: mapsUrlForVenueName(pick.venueName, venues),
+  });
+  return {
+    winningRecommendation: addUrl(result.winningRecommendation),
+    backupOptions: (result.backupOptions ?? []).map(addUrl),
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -41,7 +57,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const roomCode = body.roomCode?.trim();
+    const roomCode = body.roomCode?.trim().toUpperCase();
 
     if (!roomCode) {
       return NextResponse.json(
@@ -250,7 +266,7 @@ Provide your response adhering strictly to the structured schema.
       });
 
       const parsed = JSON.parse(response.text ?? "{}") as GroupResolveResponse;
-      return NextResponse.json(parsed, { status: 200 });
+      return NextResponse.json(withMapsUrls(parsed, candidateVenues), { status: 200 });
     }
 
     // Heuristic Fallback Engine
@@ -292,7 +308,7 @@ Provide your response adhering strictly to the structured schema.
       ],
     };
 
-    return NextResponse.json(fallbackResponse, { status: 200 });
+    return NextResponse.json(withMapsUrls(fallbackResponse, candidateVenues), { status: 200 });
   } catch (error) {
     console.error("Error in /api/group/resolve:", error);
     return NextResponse.json(

@@ -3,6 +3,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
+import { googleMapsUrl, mapsUrlForVenueName } from "@/lib/maps";
 
 export interface DecideRequestPayload {
   maxBudget: number;
@@ -19,6 +20,8 @@ export interface RecommendationItem {
   estimatedTimeMins: number;
   travelMethod: string;
   reasoning: string;
+  // Google Maps directions link; Maps works out the route from the user's location.
+  mapsUrl?: string;
 }
 
 export interface DecideResponseData {
@@ -270,7 +273,11 @@ Provide your response adhering strictly to the structured schema.
         response.text ?? '{"recommendations": []}'
       ) as DecideResponseData;
 
-      return NextResponse.json(parsedData, { status: 200 });
+      const recommendations = (parsedData.recommendations ?? []).map((rec) => ({
+        ...rec,
+        mapsUrl: mapsUrlForVenueName(rec.venueName, candidatePool),
+      }));
+      return NextResponse.json({ recommendations }, { status: 200 });
     }
 
     // Heuristic Fallback Engine if GEMINI_API_KEY is not yet populated
@@ -315,6 +322,7 @@ Provide your response adhering strictly to the structured schema.
         estimatedCostMYR: affordableItem.priceMYR,
         estimatedTimeMins: totalTime,
         travelMethod,
+        mapsUrl: googleMapsUrl(venue),
         reasoning:
           transportMode === "walk_or_public"
             ? `Within fast walking/shuttle distance of ${userLocation}, fits budget of RM${maxBudget}, and respects dietary preferences.`

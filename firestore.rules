@@ -9,6 +9,15 @@ service cloud.firestore {
       allow write: if true; // In production, restrict write to admin or via secure Firebase Admin SDK
     }
 
+    // Group decision rooms: anyone can open a room and join it, but nobody can edit or delete entries
+    match /group_rooms/{roomId} {
+      allow read, create: if true;
+
+      match /participants/{participantId} {
+        allow read, create: if true;
+      }
+    }
+
     match /{document=**} {
       allow read: if true;
       allow write: if false;

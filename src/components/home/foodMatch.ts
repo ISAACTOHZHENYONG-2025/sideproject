@@ -1,4 +1,5 @@
 import type { RecommendationItem } from "@/app/api/decide/route";
+import { googleMapsUrl } from "@/lib/maps";
 
 export type FoodMatch = {
   id: string;
@@ -23,6 +24,7 @@ export type FoodMatch = {
   primaryCta: string;
   secondaryCta: string;
   secondaryIcon: string;
+  mapsUrl?: string;
 };
 
 export const FOOD_MATCHES: FoodMatch[] = [
@@ -121,7 +123,8 @@ export function fromRecommendation(rec: RecommendationItem, index: number, budge
     travelIconTone: isBus || isDrive ? "amber" : "primary",
     insight: rec.reasoning,
     primaryCta: "View Menu",
-    secondaryCta: isBus ? "Bus Track" : "Directions",
-    secondaryIcon: isBus ? "commute" : "near_me",
+    secondaryCta: "Directions",
+    secondaryIcon: "near_me",
+    mapsUrl: rec.mapsUrl ?? googleMapsUrl({ name: rec.venueName }),
   };
 }

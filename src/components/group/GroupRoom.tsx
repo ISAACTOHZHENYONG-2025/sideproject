@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import BottomNav from "../BottomNav";
 import MaterialIcon from "@/components/ui/MaterialIcon";
+import { googleMapsUrl } from "@/lib/maps";
 import { getRoom, resolveRoom, type GroupResolveResponse, type RoomInfo } from "@/lib/api";
 import GroupEntry, { type GroupSession } from "./GroupEntry";
 
@@ -77,6 +78,15 @@ function PickCard({ pick, winner }: { pick: Pick; winner?: boolean }) {
         <span className="text-base shrink-0 leading-none mt-0.5">💡</span>
         <p className="text-[11px] leading-snug font-medium">{pick.consensusReasoning}</p>
       </div>
+      <a
+        className="mt-3 py-2.5 px-3 rounded-full bg-surface-container hover:bg-surface-container-high text-on-surface text-[12px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform"
+        href={pick.mapsUrl ?? googleMapsUrl({ name: pick.venueName })}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <MaterialIcon name="near_me" className="text-[16px] text-primary" />
+        <span>Directions</span>
+      </a>
     </div>
   );
 }

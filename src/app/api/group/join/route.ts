@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = (await req.json().catch(() => ({}))) as Partial<JoinMemberPayload>;
-    const roomCode = body.roomCode?.trim();
+    const roomCode = body.roomCode?.trim().toUpperCase();
 
     if (!roomCode) {
       return NextResponse.json(
