@@ -1,4 +1,5 @@
 import MaterialIcon from "@/components/ui/MaterialIcon";
+import { googleMapsUrl } from "@/lib/maps";
 import type { FoodMatch } from "./foodMatch";
 
 type FoodMatchCardProps = {
@@ -116,13 +117,15 @@ export default function FoodMatchCard({ match }: FoodMatchCardProps) {
             <span>{match.primaryCta}</span>
             <MaterialIcon name="arrow_forward" className="text-[15px]" />
           </button>
-          <button
+          <a
             className="py-2.5 px-3 rounded-full bg-surface-container hover:bg-surface-container-high text-on-surface text-[12px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform"
-            type="button"
+            href={match.mapsUrl ?? googleMapsUrl({ name: match.title })}
+            target="_blank"
+            rel="noopener noreferrer"
           >
             <MaterialIcon name={match.secondaryIcon} className="text-[16px] text-primary" />
             <span>{match.secondaryCta}</span>
-          </button>
+          </a>
         </div>
       </div>
     </article>

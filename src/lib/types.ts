@@ -12,6 +12,8 @@ export interface Venue {
   isHalal: boolean;
   dietaryTags: string[];
   menuItems: MenuItem[];
+  // Google Places ID, when the venue was imported from Places; makes map links exact.
+  placeId?: string;
   createdAt?: string;
 }
 
