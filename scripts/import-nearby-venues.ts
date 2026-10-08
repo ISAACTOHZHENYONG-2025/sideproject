@@ -13,7 +13,7 @@
 // Re-running is safe: each place is stored under its Google place ID. A place counts as a duplicate when
 // it has the same place ID, or the same name (or one name contains the other) within 60 m. Branches of
 // the same chain in different places are kept. Venues already in Firestore get their description,
-// hours and contact details refreshed; their name, price, halal and serves are left alone.
+// hours and services refreshed; their name, price, halal and serves are left alone.
 
 import * as fs from "fs";
 import { collection, getDocs, doc, writeBatch } from "firebase/firestore";
@@ -66,8 +66,6 @@ const FIELD_MASK = [
   "places.primaryTypeDisplayName",
   "places.editorialSummary",
   "places.regularOpeningHours.weekdayDescriptions",
-  "places.nationalPhoneNumber",
-  "places.websiteUri",
   "places.rating",
   "places.userRatingCount",
   "places.priceLevel",
@@ -94,8 +92,6 @@ interface GooglePlace {
   primaryTypeDisplayName?: { text: string };
   editorialSummary?: { text: string };
   regularOpeningHours?: { weekdayDescriptions?: string[] };
-  nationalPhoneNumber?: string;
-  websiteUri?: string;
   rating?: number;
   userRatingCount?: number;
   priceLevel?: string;
@@ -127,8 +123,6 @@ const DETAIL_FIELDS = [
   "cuisine",
   "openingHours",
   "services",
-  "phone",
-  "website",
   "rating",
   "ratingCount",
   "mapsUrl",
@@ -201,8 +195,6 @@ function toVenue(place: GooglePlace): ImportedVenue | null {
     cuisine: place.primaryTypeDisplayName?.text,
     openingHours: place.regularOpeningHours?.weekdayDescriptions,
     services: buildServices(place),
-    phone: place.nationalPhoneNumber,
-    website: place.websiteUri,
     latitude: place.location.latitude,
     longitude: place.location.longitude,
     distanceMeters: Math.round(distanceMeters(UM_CAMPUS_CENTER, place.location)),

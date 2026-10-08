@@ -16,8 +16,6 @@ export const SHEET_COLUMNS = [
   "ratingCount",
   "distanceFromCampusM",
   "address",
-  "phone",
-  "website",
   "mapsUrl",
 ] as const;
 

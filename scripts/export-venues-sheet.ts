@@ -34,8 +34,6 @@ runScript(async () => {
     v.ratingCount,
     v.distanceMeters,
     v.location,
-    v.phone,
-    v.website,
     v.mapsUrl ?? googleMapsUrl(v),
   ]);
 

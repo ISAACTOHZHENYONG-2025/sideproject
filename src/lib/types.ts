@@ -23,8 +23,6 @@ export interface Venue {
   openingHours?: string[];
   // e.g. ["dine-in", "takeaway", "breakfast"]
   services?: string[];
-  phone?: string;
-  website?: string;
   latitude?: number;
   longitude?: number;
   distanceMeters?: number;
