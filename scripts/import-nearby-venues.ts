@@ -13,7 +13,7 @@
 // Re-running is safe: each place is stored under its Google place ID. A place counts as a duplicate when
 // it has the same place ID, or the same name (or one name contains the other) within 60 m. Branches of
 // the same chain in different places are kept. Venues already in Firestore get their description,
-// hours and services refreshed, and vegetarian is pre-filled if blank; their name, price, halal and serves are left alone.
+// hours and services refreshed; their name, price, halal and serves are left alone.
 
 import * as fs from "fs";
 import { collection, getDocs, doc, writeBatch } from "firebase/firestore";
@@ -123,6 +123,7 @@ const DETAIL_FIELDS = [
   "cuisine",
   "openingHours",
   "services",
+  "hasVegetarianOptions",
   "rating",
   "ratingCount",
   "mapsUrl",
@@ -190,7 +191,8 @@ function toVenue(place: GooglePlace): ImportedVenue | null {
     avgPrepTimeMins: DEFAULT_PREP_MINS,
     // Left unset (not checked) unless Google lists it as a halal restaurant; confirm in the venues sheet
     isHalal: place.types?.includes("halal_restaurant") ? true : undefined,
-    vegetarian: place.servesVegetarianFood, // Google's answer; vegan and noSeafood are filled in by hand
+    // Google only says the menu has some veg dishes, so this is a reference, not the vegetarian flag
+    hasVegetarianOptions: place.servesVegetarianFood,
     dietaryTags,
     menuItems: [{ itemName: "Typical meal", priceMYR: avgPriceMYR }], // /api/decide needs at least one item
     description: place.editorialSummary?.text,
@@ -392,8 +394,6 @@ async function main() {
     const known = existingByPlaceId.get(venue.placeId);
     if (known) {
       const details: Partial<Venue> = withoutUndefined(Object.fromEntries(DETAIL_FIELDS.map((f) => [f, venue[f]])));
-      // Only pre-fill vegetarian while the sheet has not set it, so hand-checked answers are never overwritten
-      if (known.vegetarian === undefined && venue.vegetarian !== undefined) details.vegetarian = venue.vegetarian;
       toRefresh.push({ id: known.id!, name: known.name, data: details });
       continue;
     }

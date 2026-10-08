@@ -1,12 +1,13 @@
 // Byte-order mark: makes Excel read the file as UTF-8.
 export const BOM = String.fromCharCode(0xfeff);
 
-// halal, vegetarian, vegan, noSeafood (Y/N), priceMYR, serves and allergyNotes are the columns to fill in; db:import-sheet reads columns by name and ignores the rest.
+// halal, vegetarian, vegan, noSeafood (Y/N), priceMYR, serves and allergyNotes are the columns to fill in; db:import-sheet reads columns by name and ignores the rest. googleVegOptions is read-only: Google says the menu has some veg dishes, a hint for filling in vegetarian.
 export const SHEET_COLUMNS = [
   "id",
   "name",
   "halal",
   "vegetarian",
+  "googleVegOptions",
   "vegan",
   "noSeafood",
   "priceMYR",

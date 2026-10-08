@@ -27,6 +27,7 @@ runScript(async () => {
     yesNo(v.isHalal),
     // Blank means nobody has checked yet
     yesNo(v.vegetarian),
+    yesNo(v.hasVegetarianOptions),
     yesNo(v.vegan),
     yesNo(v.noSeafoodOption),
     v.avgPriceMYR,

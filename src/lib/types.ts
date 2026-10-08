@@ -12,6 +12,7 @@ export interface Venue {
   // true: checked and halal (shows the HALAL badge). false: checked and not halal. Unset: not checked yet.
   isHalal?: boolean;
   // Diet and allergy info, filled in from the venues sheet. Unset means nobody has checked yet.
+  // vegetarian: checked by hand that the venue is vegetarian, not just that it has a veg dish.
   vegetarian?: boolean;
   vegan?: boolean;
   // True when there is a decent dish without seafood
@@ -26,6 +27,8 @@ export interface Venue {
   // Google Places ID, when the venue was imported from Places; makes map links exact.
   placeId?: string;
   // Set on venues imported from Google Places
+  // Google says the menu has some vegetarian dishes. NOT the same as `vegetarian`; reference only.
+  hasVegetarianOptions?: boolean;
   description?: string;
   cuisine?: string;
   openingHours?: string[];
