@@ -160,6 +160,45 @@ const CRAVING_ALIASES: Record<string, string[]> = {
 };
 
 type Candidate = { venue: Venue; match: VenueMatch };
+// A ranked candidate, with the engine's reason when it gave one
+type Ranked = { candidate: Candidate; reasoning?: string };
+
+// First words that don't identify a chain, so "Kafe Sains" and "Kafe Bahasa" stay separate places.
+const GENERIC_FIRST_WORDS = new Set([
+  "kafe", "cafe", "restoran", "restaurant", "kedai", "warung", "the", "nasi", "gerai", "medan", "food",
+]);
+
+// Branches of one chain share a key: "KFC Jalan Universiti DT" and "KFC Gateway Mall" are both "kfc".
+function chainKey(name: string) {
+  const normalised = name
+    .toLowerCase()
+    .replace(/\(.*?\)/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  const first = normalised.split(" ")[0];
+  return first && !GENERIC_FIRST_WORDS.has(first) ? first : normalised;
+}
+
+// Top 3 holds at most one branch per chain, always that chain's nearest branch in the list;
+// every other candidate, other branches included, keeps its order in moreMatches.
+function pickTopThree(ranked: Ranked[]): { top: Ranked[]; rest: Ranked[] } {
+  const top: Ranked[] = [];
+  const used = new Set<Ranked>();
+  const seenChains = new Set<string>();
+  for (const entry of ranked) {
+    if (top.length >= 3) break;
+    const key = chainKey(entry.candidate.venue.name);
+    if (seenChains.has(key)) continue;
+    seenChains.add(key);
+    const nearest = ranked
+      .filter((r) => !used.has(r) && chainKey(r.candidate.venue.name) === key)
+      .reduce((a, b) => (b.candidate.match.travelMins < a.candidate.match.travelMins ? b : a));
+    used.add(nearest);
+    // A nearer branch swapped in keeps the reason given for the chain
+    top.push({ candidate: nearest.candidate, reasoning: entry.reasoning ?? nearest.reasoning });
+  }
+  return { top, rest: ranked.filter((r) => !used.has(r)) };
+}
 
 function escapeRegExp(text: string) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -231,8 +270,10 @@ async function rankWithGemini(
   candidates: Candidate[],
   craving: string,
   dietaryRestrictions: string[],
-): Promise<{ recommendations: RecommendationItem[]; moreMatches: VenueMatch[] }> {
-  const venues = candidates.map(({ venue, match }) => ({
+): Promise<Ranked[]> {
+  // Gemini answers with these ids, so branches that share a name stay separate venues
+  const venues = candidates.map(({ venue, match }, index) => ({
+    id: `v${index + 1}`,
     name: venue.name,
     cuisine: venue.cuisine ?? null,
     description: venue.description ?? null,
@@ -261,8 +302,8 @@ Rules:
   Malaysian terms count, e.g. mee/kuey teow/laksa are noodles, nasi is rice, "mcd" means McDonald's).
 - "recommendations": the best 3 (fewer if fewer fit), best first. "reasoning" is one short sentence (under 25 words)
   and mentions the craving when there is one.
-- "moreMatches": the names of every other venue that also fits, best first. Do not repeat the recommendations.
-- Use venue names exactly as given.
+- "moreMatches": the ids of every other venue that also fits, best first. Do not repeat the recommendations.
+- Refer to venues by their "id" (e.g. "v12"), never by name. Several branches of a chain can share a name.
 
 Venues:
 ${JSON.stringify(venues)}
@@ -282,10 +323,10 @@ ${JSON.stringify(venues)}
             items: {
               type: Type.OBJECT,
               properties: {
-                venueName: { type: Type.STRING },
+                venueId: { type: Type.STRING },
                 reasoning: { type: Type.STRING },
               },
-              required: ["venueName", "reasoning"],
+              required: ["venueId", "reasoning"],
             },
           },
           moreMatches: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -296,36 +337,29 @@ ${JSON.stringify(venues)}
   });
 
   const parsed = JSON.parse(response.text ?? "{}") as {
-    recommendations?: { venueName: string; reasoning: string }[];
+    recommendations?: { venueId: string; reasoning: string }[];
     moreMatches?: string[];
   };
 
-  // Map Gemini's names back to our own data so price, distance and links can't be invented.
-  const byName = new Map<string, Candidate>();
-  for (const c of candidates) {
-    const key = c.venue.name.trim().toLowerCase();
-    if (!byName.has(key)) byName.set(key, c);
-  }
-  const used = new Set<string>();
-  const take = (name: string) => {
-    const key = name.trim().toLowerCase();
-    const c = byName.get(key);
-    if (!c || used.has(key)) return undefined;
-    used.add(key);
-    return c;
+  // Map Gemini's ids back to our own data so price, distance and links can't be invented.
+  const used = new Set<number>();
+  const take = (id: string) => {
+    const index = Number(/^v(\d+)$/.exec(id.trim())?.[1]) - 1;
+    if (!(index >= 0 && index < candidates.length) || used.has(index)) return undefined;
+    used.add(index);
+    return candidates[index];
   };
 
-  const recommendations: RecommendationItem[] = [];
+  const ranked: Ranked[] = [];
   for (const rec of parsed.recommendations ?? []) {
-    if (recommendations.length >= 3) break;
-    const c = take(rec.venueName);
-    if (c) recommendations.push({ ...c.match, reasoning: rec.reasoning });
+    const candidate = take(rec.venueId);
+    if (candidate) ranked.push({ candidate, reasoning: rec.reasoning });
   }
-  const moreMatches = (parsed.moreMatches ?? []).flatMap((name) => {
-    const c = take(name);
-    return c ? [c.match] : [];
-  });
-  return { recommendations, moreMatches };
+  for (const id of parsed.moreMatches ?? []) {
+    const candidate = take(id);
+    if (candidate) ranked.push({ candidate });
+  }
+  return ranked;
 }
 
 export async function POST(req: NextRequest) {
@@ -362,16 +396,22 @@ export async function POST(req: NextRequest) {
         return match.estimatedTimeMins <= availableTimeMins;
       });
 
-    const respond = (
-      engine: DecideResponseData["engine"],
-      result: Pick<DecideResponseData, "recommendations" | "moreMatches">,
-    ) =>
-      NextResponse.json<DecideResponseData>(
-        { ...result, engine },
+    const respond = (engine: DecideResponseData["engine"], ranked: Ranked[]) => {
+      const { top, rest } = pickTopThree(ranked);
+      return NextResponse.json<DecideResponseData>(
+        {
+          recommendations: top.map(({ candidate, reasoning }) => ({
+            ...candidate.match,
+            reasoning: reasoning ?? fallbackReason(candidate, craving),
+          })),
+          moreMatches: rest.map(({ candidate }) => candidate.match),
+          engine,
+        },
         { status: 200 },
       );
+    };
 
-    if (candidates.length === 0) return respond("fallback", { recommendations: [], moreMatches: [] });
+    if (candidates.length === 0) return respond("fallback", []);
 
     // 3. Let Gemini pick the best 3 and order the rest by the craving
     const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
@@ -393,12 +433,10 @@ export async function POST(req: NextRequest) {
       })
       .sort(rankByDistanceAndRating);
 
-    return respond("fallback", {
-      recommendations: ranked
-        .slice(0, 3)
-        .map((c) => ({ ...c.match, reasoning: fallbackReason(c, craving) })),
-      moreMatches: ranked.slice(3).map((c) => c.match),
-    });
+    return respond(
+      "fallback",
+      ranked.map((candidate) => ({ candidate })),
+    );
   } catch (error) {
     console.error("Error in /api/decide route:", error);
     return NextResponse.json(
