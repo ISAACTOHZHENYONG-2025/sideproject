@@ -53,7 +53,7 @@ const decideCases = [
   { label: "noodles, RM10, halal", transportMode: "walk_or_public", craving: "noodles", maxBudget: 10, availableTimeMins: 30, dietaryRestrictions: ["Halal"] },
 ];
 for (const { label, ...payload } of decideCases) {
-  const { status, data } = await post("/api/decide", { locationId: "kk12", ...payload });
+  const { status, data } = await post("/api/decide", payload);
   const recs = data.recommendations;
   const more = data.moreMatches;
   report(

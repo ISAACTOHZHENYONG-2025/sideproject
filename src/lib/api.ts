@@ -44,7 +44,6 @@ const NON_DIETARY_TAGS = ["Budget Meal"];
 export function toDecidePayload(filters: FilterDraft): DecideRequestPayload {
   return {
     craving: filters.craving.trim(),
-    locationId: filters.locationId,
     maxBudget: filters.tags.includes("Budget Meal") ? Math.min(filters.budget, 10) : filters.budget,
     availableTimeMins: filters.time,
     dietaryRestrictions: filters.tags.filter((tag) => !NON_DIETARY_TAGS.includes(tag)),

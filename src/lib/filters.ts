@@ -1,8 +1,5 @@
-import { CAMPUS_LOCATIONS, DEFAULT_LOCATION_ID } from "./locations";
-
 export type FilterDraft = {
   craving: string;
-  locationId: string;
   budget: number;
   time: number;
   transport: "walk" | "drive";
@@ -11,7 +8,6 @@ export type FilterDraft = {
 
 export const DEFAULT_FILTERS: FilterDraft = {
   craving: "",
-  locationId: DEFAULT_LOCATION_ID,
   budget: 15,
   time: 30,
   transport: "walk",
@@ -39,7 +35,6 @@ export const DIET_TAGS = [
 export function filtersToSearchParams(filters: FilterDraft): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.craving.trim()) params.set("craving", filters.craving.trim());
-  params.set("loc", filters.locationId);
   params.set("budget", String(filters.budget));
   params.set("time", String(filters.time));
   params.set("transport", filters.transport);
@@ -56,12 +51,10 @@ export function filtersFromSearchParams(params: SearchParams): FilterDraft {
   };
   const budget = Number(get("budget"));
   const time = Number(get("time"));
-  const loc = get("loc");
   const tags = get("tags");
 
   return {
     craving: (get("craving") ?? "").slice(0, 60),
-    locationId: CAMPUS_LOCATIONS.some((l) => l.id === loc) ? loc! : DEFAULT_FILTERS.locationId,
     budget:
       Number.isFinite(budget) && budget >= BUDGET_RANGE.min && budget <= BUDGET_RANGE.max
         ? budget

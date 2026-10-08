@@ -4,13 +4,11 @@ import { db } from "@/lib/firebase";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
 import { googleMapsUrl } from "@/lib/maps";
-import { distanceMeters, driveMinutes, walkMinutes } from "@/lib/geo";
-import { findLocation } from "@/lib/locations";
+import { UM_CAMPUS_CENTER, distanceMeters, driveMinutes, walkMinutes } from "@/lib/geo";
 
 export interface DecideRequestPayload {
   // Free text such as "noodles" or "mcd"; empty means anything.
   craving?: string;
-  locationId: string;
   maxBudget: number;
   availableTimeMins: number;
   dietaryRestrictions: string[];
@@ -24,7 +22,7 @@ export interface VenueMatch {
   isHalal: boolean;
   serves: string[];
   rating?: number;
-  // Straight-line distance from the chosen location; absent when the venue has no coordinates.
+  // Straight-line distance from the UM campus centre; absent when the venue has no coordinates.
   distanceMeters?: number;
   travelMins: number;
   travelMethod: string;
@@ -42,7 +40,6 @@ export interface DecideResponseData {
   recommendations: RecommendationItem[];
   moreMatches: VenueMatch[];
   engine: "gemini" | "fallback";
-  locationLabel: string;
 }
 
 // Off-campus spots only offered when the student can drive. Coordinates are from Google Places.
@@ -178,10 +175,10 @@ function venueSearchText(venue: Venue) {
   ].join(" | ");
 }
 
-function toVenueMatch(venue: Venue, origin: ReturnType<typeof findLocation>, drive: boolean): VenueMatch {
+function toVenueMatch(venue: Venue, drive: boolean): VenueMatch {
   const hasCoords = typeof venue.latitude === "number" && typeof venue.longitude === "number";
   const meters = hasCoords
-    ? Math.round(distanceMeters(origin, { latitude: venue.latitude!, longitude: venue.longitude! }))
+    ? Math.round(distanceMeters(UM_CAMPUS_CENTER, { latitude: venue.latitude!, longitude: venue.longitude! }))
     : undefined;
   const travelMins =
     meters === undefined ? UNKNOWN_TRAVEL_MINS : drive ? driveMinutes(meters) : walkMinutes(meters);
@@ -210,8 +207,8 @@ function rankByDistanceAndRating(a: Candidate, b: Candidate) {
   );
 }
 
-function fallbackReason(c: Candidate, craving: string, locationLabel: string) {
-  const parts = [`${c.match.travelMethod} from ${locationLabel}`, `about RM${c.match.estimatedCostMYR.toFixed(2)}`];
+function fallbackReason(c: Candidate, craving: string) {
+  const parts = [`${c.match.travelMethod} from campus centre`, `about RM${c.match.estimatedCostMYR.toFixed(2)}`];
   if (c.match.isHalal) parts.push("halal");
   if (c.match.rating) parts.push(`rated ${c.match.rating.toFixed(1)}`);
   const lead = craving ? `Matches "${craving}": ` : "";
@@ -222,7 +219,6 @@ async function rankWithGemini(
   apiKey: string,
   candidates: Candidate[],
   craving: string,
-  locationLabel: string,
   dietaryRestrictions: string[],
 ): Promise<{ recommendations: RecommendationItem[]; moreMatches: VenueMatch[] }> {
   const venues = candidates.map(({ venue, match }) => ({
@@ -243,7 +239,7 @@ You pick where a Universiti Malaya student should eat. Every venue below already
 time and halal requirement, so judge them only on the craving, distance, rating and price.
 
 Student:
-- Starting from: ${locationLabel}
+- Location: somewhere on the Universiti Malaya campus; distances and travel times are from the campus centre
 - Craving: ${craving || "anything (no preference)"}
 - Other dietary preferences: ${dietaryRestrictions.filter((d) => d !== "Halal").join(", ") || "none"}
 
@@ -324,7 +320,6 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as Partial<DecideRequestPayload>;
 
     const craving = String(body.craving ?? "").trim().slice(0, 60);
-    const origin = findLocation(body.locationId);
     const maxBudget = Number(body.maxBudget ?? 15);
     const availableTimeMins = Number(body.availableTimeMins ?? 30);
     const dietaryRestrictions = Array.isArray(body.dietaryRestrictions) ? body.dietaryRestrictions : [];
@@ -348,7 +343,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Drop venues that can't work: over budget, not halal when required, or not enough time
     const candidates: Candidate[] = venues
-      .map((venue) => ({ venue, match: toVenueMatch(venue, origin, drive) }))
+      .map((venue) => ({ venue, match: toVenueMatch(venue, drive) }))
       .filter(({ venue, match }) => {
         if (!(venue.avgPriceMYR <= maxBudget)) return false;
         if (halalOnly && !venue.isHalal) return false;
@@ -360,7 +355,7 @@ export async function POST(req: NextRequest) {
       result: Pick<DecideResponseData, "recommendations" | "moreMatches">,
     ) =>
       NextResponse.json<DecideResponseData>(
-        { ...result, engine, locationLabel: origin.label },
+        { ...result, engine },
         { status: 200 },
       );
 
@@ -370,7 +365,7 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
     if (apiKey) {
       try {
-        return respond("gemini", await rankWithGemini(apiKey, candidates, craving, origin.label, dietaryRestrictions));
+        return respond("gemini", await rankWithGemini(apiKey, candidates, craving, dietaryRestrictions));
       } catch (err) {
         console.warn("Gemini ranking failed, using code-only fallback:", err);
       }
@@ -389,7 +384,7 @@ export async function POST(req: NextRequest) {
     return respond("fallback", {
       recommendations: ranked
         .slice(0, 3)
-        .map((c) => ({ ...c.match, reasoning: fallbackReason(c, craving, origin.label) })),
+        .map((c) => ({ ...c.match, reasoning: fallbackReason(c, craving) })),
       moreMatches: ranked.slice(3).map((c) => c.match),
     });
   } catch (error) {

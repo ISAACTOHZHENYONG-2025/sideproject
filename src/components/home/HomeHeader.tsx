@@ -1,6 +1,5 @@
 import MaterialIcon from "@/components/ui/MaterialIcon";
 import type { FilterDraft } from "@/lib/filters";
-import { findLocation } from "@/lib/locations";
 
 type HomeHeaderProps = {
   filters: FilterDraft;
@@ -38,10 +37,6 @@ export default function HomeHeader({ filters, onOpenFilters }: HomeHeaderProps) 
             <span className="max-w-[9rem] truncate">{craving}</span>
           </button>
         ) : null}
-        <button className={chipClass} onClick={onOpenFilters} type="button">
-          <MaterialIcon name="location_on" className="text-[13px] text-emerald-600" />
-          <span>{findLocation(filters.locationId).label}</span>
-        </button>
         <button className={`${chipClass} tabular-nums`} onClick={onOpenFilters} type="button">
           <span className="text-xs">⚡</span>
           <span>Max RM{filters.budget}</span>

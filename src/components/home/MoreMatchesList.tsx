@@ -5,14 +5,13 @@ import { distanceLabel } from "./foodMatch";
 
 type MoreMatchesListProps = {
   matches: VenueMatch[];
-  locationLabel: string;
 };
 
-export default function MoreMatchesList({ matches, locationLabel }: MoreMatchesListProps) {
+export default function MoreMatchesList({ matches }: MoreMatchesListProps) {
   return (
     <ul className="bg-surface-container-lowest rounded-2xl border border-[#E9ECEF] shadow-[0_2px_8px_rgba(30,35,41,0.04)] divide-y divide-[#E9ECEF]">
       {matches.map((match, index) => {
-        const distance = distanceLabel(match, locationLabel);
+        const distance = distanceLabel(match);
         return (
           <li className="flex items-center gap-3 px-4 py-3" key={`${index}-${match.venueName}`}>
             <div className="min-w-0 flex-1">

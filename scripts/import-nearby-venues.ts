@@ -7,14 +7,13 @@
 
 import { collection, getDocs, doc, writeBatch } from "firebase/firestore";
 import type { Venue } from "../src/lib/types";
-import { distanceMeters, type LatLng } from "../src/lib/geo";
+import { UM_CAMPUS_CENTER, distanceMeters, type LatLng } from "../src/lib/geo";
 import { connectFirestore, loadEnvLocal, runScript } from "./firestore";
 
 loadEnvLocal();
 
 // ---- Config ----------------------------------------------------------------
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY; // <- set this in .env.local
-const UM_CENTER = { latitude: 3.1209, longitude: 101.6538 }; // Universiti Malaya
 const DEFAULT_RADIUS_M = 1500;
 const PLACE_TYPE_GROUPS = [
   ["restaurant"],
@@ -116,7 +115,7 @@ function toVenue(place: GooglePlace): ImportedVenue | null {
     menuItems: [{ itemName: "Typical meal", priceMYR: avgPriceMYR }], // /api/decide needs at least one item
     latitude: place.location.latitude,
     longitude: place.location.longitude,
-    distanceMeters: Math.round(distanceMeters(UM_CENTER, place.location)),
+    distanceMeters: Math.round(distanceMeters(UM_CAMPUS_CENTER, place.location)),
     rating: place.rating,
     ratingCount: place.userRatingCount,
     mapsUrl: place.googleMapsUri,
@@ -137,7 +136,7 @@ async function searchNearby(includedTypes: string[], radius: number): Promise<Go
       includedTypes,
       maxResultCount: 20,
       rankPreference: "DISTANCE",
-      locationRestriction: { circle: { center: UM_CENTER, radius } },
+      locationRestriction: { circle: { center: UM_CAMPUS_CENTER, radius } },
     }),
   });
   if (!res.ok) throw new Error(`Places API ${res.status}: ${await res.text()}`);

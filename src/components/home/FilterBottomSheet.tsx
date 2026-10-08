@@ -2,7 +2,6 @@
 
 import MaterialIcon from "@/components/ui/MaterialIcon";
 import { BUDGET_RANGE, DEFAULT_FILTERS, DIET_TAGS, TIME_OPTIONS, type FilterDraft } from "@/lib/filters";
-import { CAMPUS_LOCATIONS } from "@/lib/locations";
 
 type FilterBottomSheetProps = {
   open: boolean;
@@ -15,7 +14,7 @@ type FilterBottomSheetProps = {
 const TRANSPORT_NOTES = {
   walk: {
     icon: "ℹ️",
-    text: "Walking time is worked out from where you are, at about 80 m a minute.",
+    text: "Walk times are estimated from the campus centre; Google Maps gives your exact route.",
   },
   drive: {
     icon: "🚗",
@@ -115,35 +114,6 @@ export default function FilterBottomSheet({
               ) : null}
             </div>
             <p className="text-[11px] text-[#6C757D] mt-1.5 px-1">Leave empty for anything.</p>
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-on-surface mb-2 flex items-center gap-1.5" htmlFor="location-input">
-              <MaterialIcon name="location_on" className="text-primary text-[17px]" />
-              Where are you?
-            </label>
-            <div className="relative">
-              <MaterialIcon
-                name="apartment"
-                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[20px] text-[#6C757D] pointer-events-none"
-              />
-              <select
-                className={`${inputClass} appearance-none cursor-pointer`}
-                id="location-input"
-                onChange={(event) => onChange({ ...draft, locationId: event.target.value })}
-                value={draft.locationId}
-              >
-                {CAMPUS_LOCATIONS.map((loc) => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.label} · {loc.name}
-                  </option>
-                ))}
-              </select>
-              <MaterialIcon
-                name="expand_more"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[20px] text-[#6C757D] pointer-events-none"
-              />
-            </div>
           </div>
 
           <div className="p-3.5 rounded-2xl bg-background border border-[#E9ECEF]">

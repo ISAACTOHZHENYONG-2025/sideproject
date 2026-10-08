@@ -8,7 +8,7 @@ export type FoodMatch = {
   price: string;
   priceNote: string;
   isHalal: boolean;
-  // e.g. "650 m from KK12"; absent when the venue has no coordinates
+  // e.g. "650 m from campus centre"; absent when the venue has no coordinates
   distanceLabel?: string;
   travelIcon: string;
   travelLabel: string;
@@ -18,18 +18,13 @@ export type FoodMatch = {
   mapsUrl: string;
 };
 
-export function distanceLabel(match: VenueMatch, locationLabel: string) {
+export function distanceLabel(match: VenueMatch) {
   return match.distanceMeters === undefined
     ? undefined
-    : `${formatDistance(match.distanceMeters)} from ${locationLabel}`;
+    : `${formatDistance(match.distanceMeters)} from campus centre`;
 }
 
-export function fromRecommendation(
-  rec: RecommendationItem,
-  index: number,
-  budget: number,
-  locationLabel: string,
-): FoodMatch {
+export function fromRecommendation(rec: RecommendationItem, index: number, budget: number): FoodMatch {
   return {
     id: `${index}-${rec.venueName}`,
     rank: index + 1,
@@ -37,7 +32,7 @@ export function fromRecommendation(
     price: `RM ${rec.estimatedCostMYR.toFixed(2)}`,
     priceNote: `Under RM${budget}`,
     isHalal: rec.isHalal,
-    distanceLabel: distanceLabel(rec, locationLabel),
+    distanceLabel: distanceLabel(rec),
     travelIcon: rec.travelMethod.endsWith("drive") ? "directions_car" : "directions_walk",
     travelLabel: rec.travelMethod,
     duration: `${rec.estimatedTimeMins} min total`,

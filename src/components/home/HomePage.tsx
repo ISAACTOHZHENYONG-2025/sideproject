@@ -21,7 +21,6 @@ type HomePageProps = {
 function countChanges(a: FilterDraft, b: FilterDraft) {
   let changes = 0;
   if (a.craving.trim().toLowerCase() !== b.craving.trim().toLowerCase()) changes++;
-  if (a.locationId !== b.locationId) changes++;
   if (a.budget !== b.budget) changes++;
   if (a.time !== b.time) changes++;
   if (a.transport !== b.transport) changes++;
@@ -50,7 +49,6 @@ export default function HomePage({ initialFilters }: HomePageProps) {
   const [matches, setMatches] = useState<FoodMatch[]>([]);
   const [moreMatches, setMoreMatches] = useState<VenueMatch[]>([]);
   const [engine, setEngine] = useState<DecideResponseData["engine"]>("fallback");
-  const [locationLabel, setLocationLabel] = useState("");
   const [showMore, setShowMore] = useState(false);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState("");
@@ -63,12 +61,11 @@ export default function HomePage({ initialFilters }: HomePageProps) {
       if (requestId !== latestRequest.current) return;
       setMatches(
         data.recommendations.map((rec, index) =>
-          fromRecommendation(rec, index, filters.budget, data.locationLabel),
+          fromRecommendation(rec, index, filters.budget),
         ),
       );
       setMoreMatches(data.moreMatches);
       setEngine(data.engine);
-      setLocationLabel(data.locationLabel);
       setShowMore(false);
       setFetchedFor(filters);
       setStatus("ready");
@@ -185,7 +182,7 @@ export default function HomePage({ initialFilters }: HomePageProps) {
               </button>
             ) : null}
 
-            {showMore ? <MoreMatchesList locationLabel={locationLabel} matches={moreMatches} /> : null}
+            {showMore ? <MoreMatchesList matches={moreMatches} /> : null}
           </div>
         </main>
 

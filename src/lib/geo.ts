@@ -3,6 +3,10 @@ export interface LatLng {
   longitude: number;
 }
 
+// Universiti Malaya campus centre. Distances and walk times are measured from here;
+// Google Maps works out the real route from the student's own location.
+export const UM_CAMPUS_CENTER: LatLng = { latitude: 3.1209, longitude: 101.6538 };
+
 const WALK_METERS_PER_MIN = 80;
 // Straight-line distance understates road distance; city driving averages about 25 km/h.
 const DRIVE_ROAD_FACTOR = 1.4;
