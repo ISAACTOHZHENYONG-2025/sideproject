@@ -2,13 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import BottomDock from "@/components/BottomDock";
+import BottomNav from "@/components/BottomNav";
 import { decide, toDecidePayload } from "@/lib/api";
 import FilterBottomSheet, { DEFAULT_FILTERS, type FilterDraft } from "./FilterBottomSheet";
 import FoodMatchCard from "./FoodMatchCard";
 import HomeHeader from "./HomeHeader";
-import MaterialIcon from "./MaterialIcon";
-import { fromRecommendation, type FoodMatch } from "./matchData";
+import MaterialIcon from "@/components/ui/MaterialIcon";
+import { fromRecommendation, type FoodMatch } from "./foodMatch";
 
 type Status = "loading" | "ready" | "error";
 
@@ -152,7 +152,7 @@ export default function HomePage() {
           </div>
         </main>
 
-        <BottomDock
+        <BottomNav
           active="explore"
           actionBadge={status === "ready" ? `${matches.length} Options` : undefined}
           actionLabel={actionLabel}

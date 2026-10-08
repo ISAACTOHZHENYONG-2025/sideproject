@@ -44,7 +44,7 @@ try {
   process.exit(2);
 }
 
-for (const path of ["/", "/group", "/filter", "/regular"]) await page(path);
+for (const path of ["/", "/group", "/filter"]) await page(path);
 
 // /api/decide
 for (const transportMode of ["walk_or_public", "private_vehicle"]) {

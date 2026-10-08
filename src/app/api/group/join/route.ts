@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (error: unknown) {
+  } catch (error) {
     console.error("Error in /api/group/join:", error);
     return NextResponse.json(
       {

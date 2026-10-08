@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import BottomDock from "../BottomDock";
-import MaterialIcon from "../home/MaterialIcon";
+import BottomNav from "../BottomNav";
+import MaterialIcon from "@/components/ui/MaterialIcon";
 import { getRoom, resolveRoom, type GroupResolveResponse, type RoomInfo } from "@/lib/api";
 import GroupEntry, { type GroupSession } from "./GroupEntry";
 
@@ -287,7 +287,7 @@ export default function GroupRoom() {
           )}
         </main>
 
-        <BottomDock
+        <BottomNav
           active="group"
           actionBadge={session ? `${members.length} Members` : undefined}
           actionLabel={

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { GoogleGenAI, Type } from "@google/genai";
-import type { MenuItem, Venue } from "@/lib/types";
+import type { Venue } from "@/lib/types";
 
 export interface DecideRequestPayload {
   maxBudget: number;
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       try {
         const snapshot = await getDocs(collection(db, "venues"));
         snapshot.forEach((docSnap) => {
-          campusVenues.push({ id: docSnap.id, ...docSnap.data() } as Venue);
+          campusVenues.push({ id: docSnap.id, ...(docSnap.data() as Omit<Venue, "id">) });
         });
       } catch (err) {
         console.warn("Could not fetch venues from Firestore, proceeding with fallback:", err);
@@ -285,7 +285,7 @@ Provide your response adhering strictly to the structured schema.
       if (recommendations.length >= 3) break;
 
       const affordableItem =
-        venue.menuItems?.find((m: MenuItem) => m.priceMYR <= maxBudget) ||
+        venue.menuItems?.find((m) => m.priceMYR <= maxBudget) ||
         venue.menuItems?.[0];
 
       if (!affordableItem || affordableItem.priceMYR > maxBudget) continue;
@@ -323,7 +323,7 @@ Provide your response adhering strictly to the structured schema.
     }
 
     return NextResponse.json({ recommendations }, { status: 200 });
-  } catch (error: unknown) {
+  } catch (error) {
     console.error("Error in /api/decide route:", error);
     return NextResponse.json(
       {

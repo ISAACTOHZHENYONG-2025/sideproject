@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { GoogleGenAI, Type } from "@google/genai";
-import type { MenuItem, Venue } from "@/lib/types";
+import type { Venue } from "@/lib/types";
 
 export interface Participant {
   memberName: string;
@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
     try {
       const venuesSnap = await getDocs(collection(db, "venues"));
       venuesSnap.forEach((vDoc) => {
-        candidateVenues.push({ id: vDoc.id, ...vDoc.data() } as Venue);
+        candidateVenues.push({ id: vDoc.id, ...(vDoc.data() as Omit<Venue, "id">) });
       });
     } catch (dbErr) {
       console.warn("Could not fetch venues from Firestore, falling back:", dbErr);
@@ -256,20 +256,20 @@ Provide your response adhering strictly to the structured schema.
     // Heuristic Fallback Engine
     const validCandidates = candidateVenues.filter((v) => {
       if (mergedDietaryRestrictions.includes("Halal") && !v.isHalal) return false;
-      const cheapItem = v.menuItems?.find((m: MenuItem) => m.priceMYR <= strictBudgetCap);
+      const cheapItem = v.menuItems?.find((m) => m.priceMYR <= strictBudgetCap);
       return Boolean(cheapItem);
     });
 
     const winnerVenue = validCandidates[0] || candidateVenues[0];
     const suitableItems = (winnerVenue?.menuItems || [])
-      .filter((m: MenuItem) => m.priceMYR <= strictBudgetCap)
-      .map((m: MenuItem) => m.itemName);
+      .filter((m) => m.priceMYR <= strictBudgetCap)
+      .map((m) => m.itemName);
 
     const winnerItems = suitableItems.length > 0 ? suitableItems : ["Daily Set Meal"];
     const backupVenue = validCandidates[1] || candidateVenues[1] || winnerVenue;
     const backupItems = (backupVenue?.menuItems || [])
-      .filter((m: MenuItem) => m.priceMYR <= strictBudgetCap)
-      .map((m: MenuItem) => m.itemName);
+      .filter((m) => m.priceMYR <= strictBudgetCap)
+      .map((m) => m.itemName);
 
     const participantNames = participants.map((p) => p.memberName).join(", ");
 
@@ -293,7 +293,7 @@ Provide your response adhering strictly to the structured schema.
     };
 
     return NextResponse.json(fallbackResponse, { status: 200 });
-  } catch (error: unknown) {
+  } catch (error) {
     console.error("Error in /api/group/resolve:", error);
     return NextResponse.json(
       {

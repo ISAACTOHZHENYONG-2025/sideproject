@@ -1,5 +1,5 @@
-import MaterialIcon from "./MaterialIcon";
-import type { FoodMatch } from "./matchData";
+import MaterialIcon from "@/components/ui/MaterialIcon";
+import type { FoodMatch } from "./foodMatch";
 
 type FoodMatchCardProps = {
   match: FoodMatch;

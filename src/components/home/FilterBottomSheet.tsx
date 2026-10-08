@@ -1,6 +1,6 @@
 "use client";
 
-import MaterialIcon from "./MaterialIcon";
+import MaterialIcon from "@/components/ui/MaterialIcon";
 
 export type FilterDraft = {
   mode: "single" | "group";
