@@ -10,6 +10,8 @@ import { googleMapsUrl } from "../src/lib/maps";
 import { BOM, SHEET_COLUMNS, toCsv } from "./csv";
 import { connectFirestore, runScript } from "./firestore";
 
+const yesNo = (value: boolean | undefined) => (value === undefined ? "" : value ? "Y" : "N");
+
 runScript(async () => {
   const fileArg = process.argv.find((a) => a.startsWith("--file="));
   const file = fileArg ? fileArg.split("=")[1] : "venues.csv";
@@ -23,9 +25,14 @@ runScript(async () => {
     v.id,
     v.name,
     v.isHalal ? "Y" : "N",
+    // Blank means nobody has checked yet
+    yesNo(v.vegetarian),
+    yesNo(v.vegan),
+    yesNo(v.noSeafoodOption),
     v.avgPriceMYR,
     // Empty for venues that haven't been filled in yet; kept on re-export so nothing is lost.
     (v.serves ?? []).join(", "),
+    v.allergyNotes,
     v.cuisine,
     v.description,
     (v.services ?? []).join(", "),
@@ -40,5 +47,5 @@ runScript(async () => {
   // The BOM makes Excel open the file as UTF-8 so names with accents survive.
   fs.writeFileSync(file, BOM + toCsv([[...SHEET_COLUMNS], ...rows]), "utf-8");
   console.log(`Wrote ${venues.length} venue(s) to ${file}.`);
-  console.log("Fill in halal (Y/N), priceMYR and serves (e.g. \"rice, noodles\"), then run: npm run db:import-sheet -- --dry-run");
+  console.log("Fill in halal, vegetarian, vegan, noSeafood (Y/N), priceMYR, serves (e.g. \"rice, noodles\") and allergyNotes, then run: npm run db:import-sheet -- --dry-run");
 });

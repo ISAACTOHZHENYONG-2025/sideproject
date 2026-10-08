@@ -1,6 +1,6 @@
 import type { VenueMatch } from "@/app/api/decide/route";
 import MaterialIcon from "@/components/ui/MaterialIcon";
-import HalalBadge from "./HalalBadge";
+import DietBadges from "./DietBadges";
 import { distanceLabel } from "./foodMatch";
 
 type MoreMatchesListProps = {
@@ -17,7 +17,7 @@ export default function MoreMatchesList({ matches }: MoreMatchesListProps) {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <p className="text-[14px] font-bold text-on-surface truncate">{match.venueName}</p>
-                {match.isHalal ? <HalalBadge /> : null}
+                <DietBadges isHalal={match.isHalal} isVegan={match.isVegan} isVegetarian={match.isVegetarian} />
               </div>
               <p className="text-[11px] text-on-surface-variant mt-0.5 tabular-nums">
                 <span className="font-bold text-primary">RM {match.estimatedCostMYR.toFixed(2)}</span>
@@ -26,6 +26,12 @@ export default function MoreMatchesList({ matches }: MoreMatchesListProps) {
                 {" · "}
                 {match.estimatedTimeMins} min total
               </p>
+              {match.allergyNotes ? (
+                <p className="text-[11px] text-[#D84315] mt-0.5 flex items-start gap-1">
+                  <MaterialIcon name="warning" className="text-[13px] shrink-0" />
+                  <span>{match.allergyNotes}</span>
+                </p>
+              ) : null}
             </div>
             <a
               aria-label={`Directions to ${match.venueName}`}

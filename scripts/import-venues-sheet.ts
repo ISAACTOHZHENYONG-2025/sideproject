@@ -1,8 +1,8 @@
-// Reads venues.csv (from db:export-sheet) and updates each venue's halal, price and food types by id.
+// Reads venues.csv (from db:export-sheet) and updates each venue's halal, diet flags, price, food types and allergy notes by id.
 //   npm run db:import-sheet -- --dry-run   # show what would change, write nothing
 //   npm run db:import-sheet                # write the changes to Firestore
 //   npm run db:import-sheet -- --file=my-venues.csv
-// Blank halal/priceMYR/serves cells leave that field as it is. Rows with bad values are skipped.
+// Blank cells leave that field as it is. Rows with bad values are skipped.
 
 import * as fs from "fs";
 import { collection, doc, getDocs, writeBatch } from "firebase/firestore";
@@ -13,14 +13,24 @@ import { connectFirestore, runScript } from "./firestore";
 const MAX_PRICE_MYR = 200;
 const PLACEHOLDER_MENU_ITEM = "Typical meal";
 
-type Update = Partial<Pick<Venue, "isHalal" | "avgPriceMYR" | "serves" | "menuItems">>;
+type Update = Partial<
+  Pick<Venue, "isHalal" | "vegetarian" | "vegan" | "noSeafoodOption" | "allergyNotes" | "avgPriceMYR" | "serves" | "menuItems">
+>;
 
-function parseHalal(value: string): boolean | undefined | Error {
+const MAX_NOTE_LENGTH = 200;
+
+function parseYesNo(column: string, value: string): boolean | undefined | Error {
   const v = value.trim().toLowerCase();
   if (!v) return undefined;
   if (["y", "yes", "true", "1"].includes(v)) return true;
   if (["n", "no", "false", "0"].includes(v)) return false;
-  return new Error(`halal must be Y or N, got "${value}"`);
+  return new Error(`${column} must be Y or N, got "${value}"`);
+}
+
+function parseNote(value: string): string | undefined | Error {
+  const note = value.trim().replace(/\s+/g, " ");
+  if (note.length > MAX_NOTE_LENGTH) return new Error(`allergyNotes is over ${MAX_NOTE_LENGTH} characters`);
+  return note || undefined;
 }
 
 function parsePrice(value: string): number | undefined | Error {
@@ -54,7 +64,7 @@ runScript(async () => {
 
   const [header, ...rows] = parseCsv(fs.readFileSync(file, "utf-8"));
   const col = Object.fromEntries((header ?? []).map((name, i) => [name.trim().toLowerCase(), i]));
-  for (const required of ["id", "halal", "pricemyr", "serves"]) {
+  for (const required of ["id", "halal", "vegetarian", "vegan", "noseafood", "pricemyr", "serves", "allergynotes"]) {
     if (col[required] === undefined) {
       console.error(`${file} is missing the "${required}" column. Expected the columns from db:export-sheet.`);
       process.exit(1);
@@ -81,9 +91,13 @@ runScript(async () => {
       skipped++;
       return;
     }
-    const halal = parseHalal(cell("halal"));
+    const halal = parseYesNo("halal", cell("halal"));
+    const vegetarian = parseYesNo("vegetarian", cell("vegetarian"));
+    const vegan = parseYesNo("vegan", cell("vegan"));
+    const noSeafood = parseYesNo("noSeafood", cell("noseafood"));
+    const note = parseNote(cell("allergynotes"));
     const price = parsePrice(cell("pricemyr"));
-    const problems = [halal, price].filter((v): v is Error => v instanceof Error);
+    const problems = [halal, vegetarian, vegan, noSeafood, note, price].filter((v): v is Error => v instanceof Error);
     if (problems.length > 0) {
       console.log(`SKIP  ${label}: ${problems.map((p) => p.message).join("; ")}`);
       skipped++;
@@ -97,6 +111,22 @@ runScript(async () => {
     if (typeof halal === "boolean" && halal !== Boolean(venue.isHalal)) {
       data.isHalal = halal;
       changes.push(`halal ${venue.isHalal ? "Y" : "N"} -> ${halal ? "Y" : "N"}`);
+    }
+    const flags = [
+      ["vegetarian", "vegetarian", vegetarian],
+      ["vegan", "vegan", vegan],
+      ["noSeafood", "noSeafoodOption", noSeafood],
+    ] as const;
+    for (const [label, field, value] of flags) {
+      if (typeof value === "boolean" && value !== venue[field]) {
+        data[field] = value;
+        const was = venue[field] === undefined ? "blank" : venue[field] ? "Y" : "N";
+        changes.push(`${label} ${was} -> ${value ? "Y" : "N"}`);
+      }
+    }
+    if (typeof note === "string" && note !== venue.allergyNotes) {
+      data.allergyNotes = note;
+      changes.push(`allergyNotes "${venue.allergyNotes ?? ""}" -> "${note}"`);
     }
     if (typeof price === "number" && price !== venue.avgPriceMYR) {
       data.avgPriceMYR = price;

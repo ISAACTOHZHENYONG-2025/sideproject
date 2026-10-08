@@ -13,7 +13,7 @@
 // Re-running is safe: each place is stored under its Google place ID. A place counts as a duplicate when
 // it has the same place ID, or the same name (or one name contains the other) within 60 m. Branches of
 // the same chain in different places are kept. Venues already in Firestore get their description,
-// hours and services refreshed; their name, price, halal and serves are left alone.
+// hours and services refreshed, and vegetarian is pre-filled if blank; their name, price, halal and serves are left alone.
 
 import * as fs from "fs";
 import { collection, getDocs, doc, writeBatch } from "firebase/firestore";
@@ -189,6 +189,7 @@ function toVenue(place: GooglePlace): ImportedVenue | null {
     avgPriceMYR,
     avgPrepTimeMins: DEFAULT_PREP_MINS,
     isHalal: true, // halal by default for now; correct it in the venues sheet
+    vegetarian: place.servesVegetarianFood, // Google's answer; vegan and noSeafood are filled in by hand
     dietaryTags,
     menuItems: [{ itemName: "Typical meal", priceMYR: avgPriceMYR }], // /api/decide needs at least one item
     description: place.editorialSummary?.text,
@@ -389,7 +390,9 @@ async function main() {
   for (const venue of venues) {
     const known = existingByPlaceId.get(venue.placeId);
     if (known) {
-      const details = withoutUndefined(Object.fromEntries(DETAIL_FIELDS.map((f) => [f, venue[f]])));
+      const details: Partial<Venue> = withoutUndefined(Object.fromEntries(DETAIL_FIELDS.map((f) => [f, venue[f]])));
+      // Only pre-fill vegetarian while the sheet has not set it, so hand-checked answers are never overwritten
+      if (known.vegetarian === undefined && venue.vegetarian !== undefined) details.vegetarian = venue.vegetarian;
       toRefresh.push({ id: known.id!, name: known.name, data: details });
       continue;
     }

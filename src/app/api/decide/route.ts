@@ -4,6 +4,7 @@ import { db } from "@/lib/firebase";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
 import { googleMapsUrl } from "@/lib/maps";
+import { meetsDiet } from "@/lib/diet";
 import { UM_CAMPUS_CENTER, distanceMeters, driveMinutes, walkMinutes } from "@/lib/geo";
 
 export interface DecideRequestPayload {
@@ -20,6 +21,10 @@ export interface VenueMatch {
   venueName: string;
   estimatedCostMYR: number;
   isHalal: boolean;
+  isVegetarian: boolean;
+  isVegan: boolean;
+  // Shown on the card as a warning; not a filter
+  allergyNotes?: string;
   serves: string[];
   rating?: number;
   // Straight-line distance from the UM campus centre; absent when the venue has no coordinates.
@@ -78,6 +83,7 @@ const OFF_CAMPUS_DRIVING_HOTSPOTS: Venue[] = [
   },
   {
     name: "The Ganga Cafe",
+    vegetarian: true,
     location: "Lorong Kurau, Bangsar",
     placeId: "ChIJ-0H2IZtJzDEROu7FdjD33FY",
     latitude: 3.12264,
@@ -189,6 +195,9 @@ function toVenueMatch(venue: Venue, drive: boolean): VenueMatch {
     venueName: venue.name,
     estimatedCostMYR: venue.avgPriceMYR,
     isHalal: Boolean(venue.isHalal),
+    isVegetarian: venue.vegetarian === true || venue.vegan === true,
+    isVegan: venue.vegan === true,
+    allergyNotes: venue.allergyNotes,
     serves: venue.serves ?? [],
     rating: venue.rating,
     distanceMeters: meters,
@@ -245,7 +254,7 @@ time and halal requirement, so judge them only on the craving, distance, rating 
 Student:
 - Location: somewhere on the Universiti Malaya campus; distances and travel times are from the campus centre
 - Craving: ${craving || "anything (no preference)"}
-- Other dietary preferences: ${dietaryRestrictions.filter((d) => d !== "Halal").join(", ") || "none"}
+- Diet filters already applied in code (every venue below meets them): ${dietaryRestrictions.join(", ") || "none"}
 
 Rules:
 - If there is a craving, only include venues that plausibly serve it (use "serves", "cuisine", "description", "menuHints", "tags" and the name;
@@ -328,7 +337,6 @@ export async function POST(req: NextRequest) {
     const availableTimeMins = Number(body.availableTimeMins ?? 30);
     const dietaryRestrictions = Array.isArray(body.dietaryRestrictions) ? body.dietaryRestrictions : [];
     const drive = body.transportMode === "private_vehicle";
-    const halalOnly = dietaryRestrictions.includes("Halal");
 
     // 1. Load venues from Firestore
     let venues: Venue[] = [];
@@ -345,12 +353,12 @@ export async function POST(req: NextRequest) {
     if (venues.length === 0) venues = FALLBACK_CAMPUS_VENUES;
     if (drive) venues = [...venues, ...OFF_CAMPUS_DRIVING_HOTSPOTS];
 
-    // 2. Drop venues that can't work: over budget, not halal when required, or not enough time
+    // 2. Drop venues that can't work: over budget, miss a ticked diet filter, or not enough time
     const candidates: Candidate[] = venues
       .map((venue) => ({ venue, match: toVenueMatch(venue, drive) }))
       .filter(({ venue, match }) => {
         if (!(venue.avgPriceMYR <= maxBudget)) return false;
-        if (halalOnly && !venue.isHalal) return false;
+        if (!meetsDiet(venue, dietaryRestrictions)) return false;
         return match.estimatedTimeMins <= availableTimeMins;
       });
 

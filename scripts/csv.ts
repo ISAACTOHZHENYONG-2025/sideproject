@@ -1,13 +1,17 @@
 // Byte-order mark: makes Excel read the file as UTF-8.
 export const BOM = String.fromCharCode(0xfeff);
 
-// halal, priceMYR and serves are the columns to fill in; db:import-sheet reads columns by name and ignores the rest.
+// halal, vegetarian, vegan, noSeafood (Y/N), priceMYR, serves and allergyNotes are the columns to fill in; db:import-sheet reads columns by name and ignores the rest.
 export const SHEET_COLUMNS = [
   "id",
   "name",
   "halal",
+  "vegetarian",
+  "vegan",
+  "noSeafood",
   "priceMYR",
   "serves",
+  "allergyNotes",
   "cuisine",
   "description",
   "services",

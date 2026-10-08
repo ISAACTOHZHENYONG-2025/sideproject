@@ -1,5 +1,5 @@
 import MaterialIcon from "@/components/ui/MaterialIcon";
-import HalalBadge from "./HalalBadge";
+import DietBadges from "./DietBadges";
 import type { FoodMatch } from "./foodMatch";
 
 type FoodMatchCardProps = {
@@ -38,7 +38,7 @@ export default function FoodMatchCard({ match, insightLabel }: FoodMatchCardProp
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <h3 className="text-[16px] font-bold text-on-surface leading-tight">{match.title}</h3>
-              {match.isHalal ? <HalalBadge /> : null}
+              <DietBadges isHalal={match.isHalal} isVegan={match.isVegan} isVegetarian={match.isVegetarian} />
             </div>
             {match.distanceLabel ? (
               <p className="text-[11px] text-on-surface-variant flex items-center gap-1 mt-0.5 tabular-nums">
@@ -80,6 +80,15 @@ export default function FoodMatchCard({ match, insightLabel }: FoodMatchCardProp
             <strong className="text-amber-900 font-bold">{insightLabel}:</strong> {match.insight}
           </p>
         </div>
+
+        {match.allergyNotes ? (
+          <div className="rounded-xl p-2.5 bg-[#FBE9E7] border border-[#FF5722]/30 text-[#D84315] flex items-start gap-2">
+            <MaterialIcon name="warning" className="text-[16px] shrink-0 mt-0.5" />
+            <p className="text-[12px] leading-snug">
+              <strong className="font-bold">Allergy note:</strong> {match.allergyNotes}
+            </p>
+          </div>
+        ) : null}
 
         <a
           className="h-11 px-3 rounded-full bg-primary hover:bg-primary-dark text-white text-[13px] font-bold flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-transform"

@@ -8,6 +8,9 @@ export type FoodMatch = {
   price: string;
   priceNote: string;
   isHalal: boolean;
+  isVegetarian: boolean;
+  isVegan: boolean;
+  allergyNotes?: string;
   // e.g. "650 m from campus centre"; absent when the venue has no coordinates
   distanceLabel?: string;
   travelIcon: string;
@@ -32,6 +35,9 @@ export function fromRecommendation(rec: RecommendationItem, index: number, budge
     price: `RM ${rec.estimatedCostMYR.toFixed(2)}`,
     priceNote: `Under RM${budget}`,
     isHalal: rec.isHalal,
+    isVegetarian: rec.isVegetarian,
+    isVegan: rec.isVegan,
+    allergyNotes: rec.allergyNotes,
     distanceLabel: distanceLabel(rec),
     travelIcon: rec.travelMethod.endsWith("drive") ? "directions_car" : "directions_walk",
     travelLabel: rec.travelMethod,

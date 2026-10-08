@@ -50,6 +50,8 @@ for (const path of ["/", "/group", "/filter"]) await page(path);
 const decideCases = [
   { label: "walk, any craving", transportMode: "walk_or_public", craving: "", maxBudget: 15, availableTimeMins: 30, dietaryRestrictions: ["Halal"] },
   { label: "drive, any craving", transportMode: "private_vehicle", craving: "", maxBudget: 15, availableTimeMins: 30, dietaryRestrictions: ["Halal"] },
+  { label: "vegetarian", transportMode: "walk_or_public", craving: "", maxBudget: 30, availableTimeMins: 60, dietaryRestrictions: ["Vegetarian"] },
+  { label: "vegan + no seafood", transportMode: "walk_or_public", craving: "", maxBudget: 30, availableTimeMins: 60, dietaryRestrictions: ["Vegan", "No Seafood"] },
   { label: "noodles, RM10, halal", transportMode: "walk_or_public", craving: "noodles", maxBudget: 10, availableTimeMins: 30, dietaryRestrictions: ["Halal"] },
 ];
 for (const { label, ...payload } of decideCases) {
@@ -66,7 +68,9 @@ for (const { label, ...payload } of decideCases) {
     report(`  top picks <= 3 (${label})`, recs.length <= 3);
     report(`  all within RM${payload.maxBudget} (${label})`, all.every((r) => r.estimatedCostMYR <= payload.maxBudget));
     report(`  all within ${payload.availableTimeMins} mins (${label})`, all.every((r) => r.estimatedTimeMins <= payload.availableTimeMins));
-    report(`  all halal (${label})`, all.every((r) => r.isHalal));
+    if (payload.dietaryRestrictions.includes("Halal")) report(`  all halal (${label})`, all.every((r) => r.isHalal));
+    if (payload.dietaryRestrictions.includes("Vegetarian")) report(`  all vegetarian (${label})`, all.every((r) => r.isVegetarian));
+    if (payload.dietaryRestrictions.includes("Vegan")) report(`  all vegan (${label})`, all.every((r) => r.isVegan));
     report(`  all have a Maps link (${label})`, all.every((r) => /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&/.test(r.mapsUrl)));
   }
 }

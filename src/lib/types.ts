@@ -10,6 +10,13 @@ export interface Venue {
   avgPriceMYR: number;
   avgPrepTimeMins: number;
   isHalal: boolean;
+  // Diet and allergy info, filled in from the venues sheet. Unset means nobody has checked yet.
+  vegetarian?: boolean;
+  vegan?: boolean;
+  // True when there is a decent dish without seafood
+  noSeafoodOption?: boolean;
+  // Free-text warning shown on the venue card, e.g. "peanut sauce in most dishes"
+  allergyNotes?: string;
   dietaryTags: string[];
   menuItems: MenuItem[];
   // Food types the venue serves, e.g. ["rice", "noodles"]; filled in from the venues sheet.

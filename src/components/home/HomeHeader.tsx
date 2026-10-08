@@ -48,12 +48,14 @@ export default function HomeHeader({ filters, onOpenFilters }: HomeHeaderProps) 
         <button className={chipClass} onClick={onOpenFilters} type="button">
           <span>{filters.transport === "walk" ? "🚶 Walk" : "🚗 Drive"}</span>
         </button>
-        {filters.tags.includes("Halal") ? (
-          <button className={chipClass} onClick={onOpenFilters} type="button">
-            <MaterialIcon name="verified" className="text-[13px] text-emerald-600" />
-            <span>Halal</span>
-          </button>
-        ) : null}
+        {filters.tags
+          .filter((tag) => tag !== "Budget Meal")
+          .map((tag) => (
+            <button className={chipClass} key={tag} onClick={onOpenFilters} type="button">
+              <MaterialIcon name="verified" className="text-[13px] text-emerald-600" />
+              <span>{tag}</span>
+            </button>
+          ))}
       </div>
     </header>
   );
