@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const roomCode = req.nextUrl.searchParams.get("roomCode")?.trim();
+    const roomCode = req.nextUrl.searchParams.get("roomCode")?.trim().toUpperCase();
     if (!roomCode) {
       return NextResponse.json({ error: "roomCode is required." }, { status: 400 });
     }

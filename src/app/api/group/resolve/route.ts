@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { GoogleGenAI, Type } from "@google/genai";
+import type { MenuItem, Venue } from "@/lib/types";
 
 export interface Participant {
   memberName: string;
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const roomCode = body.roomCode?.trim();
+    const roomCode = body.roomCode?.trim().toUpperCase();
 
     if (!roomCode) {
       return NextResponse.json(
@@ -103,11 +104,11 @@ export async function POST(req: NextRequest) {
     const mergedDietaryRestrictions = Array.from(uniqueDietarySet);
 
     // 4. Query Firestore venues
-    let candidateVenues: any[] = [];
+    let candidateVenues: Venue[] = [];
     try {
       const venuesSnap = await getDocs(collection(db, "venues"));
       venuesSnap.forEach((vDoc) => {
-        candidateVenues.push({ id: vDoc.id, ...vDoc.data() });
+        candidateVenues.push({ id: vDoc.id, ...vDoc.data() } as Venue);
       });
     } catch (dbErr) {
       console.warn("Could not fetch venues from Firestore, falling back:", dbErr);
@@ -255,20 +256,20 @@ Provide your response adhering strictly to the structured schema.
     // Heuristic Fallback Engine
     const validCandidates = candidateVenues.filter((v) => {
       if (mergedDietaryRestrictions.includes("Halal") && !v.isHalal) return false;
-      const cheapItem = v.menuItems?.find((m: any) => m.priceMYR <= strictBudgetCap);
+      const cheapItem = v.menuItems?.find((m: MenuItem) => m.priceMYR <= strictBudgetCap);
       return Boolean(cheapItem);
     });
 
     const winnerVenue = validCandidates[0] || candidateVenues[0];
     const suitableItems = (winnerVenue?.menuItems || [])
-      .filter((m: any) => m.priceMYR <= strictBudgetCap)
-      .map((m: any) => m.itemName);
+      .filter((m: MenuItem) => m.priceMYR <= strictBudgetCap)
+      .map((m: MenuItem) => m.itemName);
 
     const winnerItems = suitableItems.length > 0 ? suitableItems : ["Daily Set Meal"];
     const backupVenue = validCandidates[1] || candidateVenues[1] || winnerVenue;
     const backupItems = (backupVenue?.menuItems || [])
-      .filter((m: any) => m.priceMYR <= strictBudgetCap)
-      .map((m: any) => m.itemName);
+      .filter((m: MenuItem) => m.priceMYR <= strictBudgetCap)
+      .map((m: MenuItem) => m.itemName);
 
     const participantNames = participants.map((p) => p.memberName).join(", ");
 
@@ -292,12 +293,12 @@ Provide your response adhering strictly to the structured schema.
     };
 
     return NextResponse.json(fallbackResponse, { status: 200 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error in /api/group/resolve:", error);
     return NextResponse.json(
       {
         error: "Failed to resolve group consensus.",
-        details: error?.message || String(error),
+        details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
     );
