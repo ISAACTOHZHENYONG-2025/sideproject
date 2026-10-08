@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { createRoom, joinRoom } from "@/lib/api";
 import { DIET_TAGS } from "../home/FilterBottomSheet";
-import MaterialIcon from "../home/MaterialIcon";
+import MaterialIcon from "@/components/ui/MaterialIcon";
 
 export type GroupSession = { roomCode: string; memberName: string };
 

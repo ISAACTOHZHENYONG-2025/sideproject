@@ -67,12 +67,12 @@ export async function POST(req: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error in /api/group/join:", error);
     return NextResponse.json(
       {
         error: "Failed to join group session.",
-        details: error?.message || String(error),
+        details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
     );

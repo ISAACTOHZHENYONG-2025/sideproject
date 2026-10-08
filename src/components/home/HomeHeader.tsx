@@ -1,4 +1,4 @@
-import MaterialIcon from "./MaterialIcon";
+import MaterialIcon from "@/components/ui/MaterialIcon";
 
 type HomeHeaderProps = {
   budget: number;

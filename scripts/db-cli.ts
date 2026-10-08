@@ -10,7 +10,6 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
-  getDoc,
 } from "firebase/firestore";
 
 // Read .env.local manually so CLI works directly without external packages

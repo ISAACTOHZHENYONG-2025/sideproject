@@ -1,7 +1,7 @@
 import Link from "next/link";
-import MaterialIcon from "./home/MaterialIcon";
+import MaterialIcon from "./ui/MaterialIcon";
 
-type BottomDockProps = {
+type BottomNavProps = {
   active: "explore" | "group";
   actionLabel?: string;
   actionBadge?: string;
@@ -10,14 +10,14 @@ type BottomDockProps = {
   onAction?: () => void;
 };
 
-export default function BottomDock({
+export default function BottomNav({
   active,
   actionLabel,
   actionBadge,
   pulse = false,
   disabled = false,
   onAction,
-}: BottomDockProps) {
+}: BottomNavProps) {
   return (
     <div className="fixed bottom-0 inset-x-0 max-w-[420px] mx-auto z-40 pointer-events-none flex flex-col">
       {actionLabel ? (
