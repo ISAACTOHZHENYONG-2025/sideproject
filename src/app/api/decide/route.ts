@@ -169,6 +169,8 @@ function cravingPatterns(craving: string): RegExp[] {
 function venueSearchText(venue: Venue) {
   return [
     venue.name,
+    venue.cuisine ?? "",
+    venue.description ?? "",
     ...(venue.serves ?? []),
     ...(venue.dietaryTags ?? []),
     ...(venue.menuItems ?? []).map((m) => m.itemName).filter((name) => name !== PLACEHOLDER_MENU_ITEM),
@@ -223,6 +225,8 @@ async function rankWithGemini(
 ): Promise<{ recommendations: RecommendationItem[]; moreMatches: VenueMatch[] }> {
   const venues = candidates.map(({ venue, match }) => ({
     name: venue.name,
+    cuisine: venue.cuisine ?? null,
+    description: venue.description ?? null,
     serves: match.serves,
     menuHints: (venue.menuItems ?? []).map((m) => m.itemName).filter((n) => n !== PLACEHOLDER_MENU_ITEM),
     tags: venue.dietaryTags ?? [],
@@ -244,7 +248,7 @@ Student:
 - Other dietary preferences: ${dietaryRestrictions.filter((d) => d !== "Halal").join(", ") || "none"}
 
 Rules:
-- If there is a craving, only include venues that plausibly serve it (use "serves", "menuHints", "tags" and the name;
+- If there is a craving, only include venues that plausibly serve it (use "serves", "cuisine", "description", "menuHints", "tags" and the name;
   Malaysian terms count, e.g. mee/kuey teow/laksa are noodles, nasi is rice, "mcd" means McDonald's).
 - "recommendations": the best 3 (fewer if fewer fit), best first. "reasoning" is one short sentence (under 25 words)
   and mentions the craving when there is one.

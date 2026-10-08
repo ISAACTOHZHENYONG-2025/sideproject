@@ -1,7 +1,25 @@
 // Byte-order mark: makes Excel read the file as UTF-8.
 export const BOM = String.fromCharCode(0xfeff);
 
-export const SHEET_COLUMNS = ["id", "name", "address", "rating", "mapsUrl", "halal", "priceMYR", "serves"] as const;
+// halal, priceMYR and serves are the columns to fill in; db:import-sheet reads columns by name and ignores the rest.
+export const SHEET_COLUMNS = [
+  "id",
+  "name",
+  "halal",
+  "priceMYR",
+  "serves",
+  "cuisine",
+  "description",
+  "services",
+  "openingHours",
+  "rating",
+  "ratingCount",
+  "distanceFromCampusM",
+  "address",
+  "phone",
+  "website",
+  "mapsUrl",
+] as const;
 
 // Minimal RFC 4180 CSV helpers for the venues sheet (quoted fields, commas and newlines inside quotes).
 

@@ -42,3 +42,5 @@ next-env.d.ts
 
 # venues sheet exported by `npm run db:export-sheet`
 /venues.csv
+# raw Google Places results cached by `npm run db:import-nearby`
+/places-cache.json

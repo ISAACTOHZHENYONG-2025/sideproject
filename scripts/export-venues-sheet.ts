@@ -22,13 +22,21 @@ runScript(async () => {
   const rows = venues.map((v) => [
     v.id,
     v.name,
-    v.location,
-    v.rating,
-    v.mapsUrl ?? googleMapsUrl(v),
     v.isHalal ? "Y" : "N",
     v.avgPriceMYR,
     // Empty for venues that haven't been filled in yet; kept on re-export so nothing is lost.
     (v.serves ?? []).join(", "),
+    v.cuisine,
+    v.description,
+    (v.services ?? []).join(", "),
+    (v.openingHours ?? []).join("; "),
+    v.rating,
+    v.ratingCount,
+    v.distanceMeters,
+    v.location,
+    v.phone,
+    v.website,
+    v.mapsUrl ?? googleMapsUrl(v),
   ]);
 
   // The BOM makes Excel open the file as UTF-8 so names with accents survive.

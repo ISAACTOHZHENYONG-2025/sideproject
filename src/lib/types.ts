@@ -18,6 +18,13 @@ export interface Venue {
   // Google Places ID, when the venue was imported from Places; makes map links exact.
   placeId?: string;
   // Set on venues imported from Google Places
+  description?: string;
+  cuisine?: string;
+  openingHours?: string[];
+  // e.g. ["dine-in", "takeaway", "breakfast"]
+  services?: string[];
+  phone?: string;
+  website?: string;
   latitude?: number;
   longitude?: number;
   distanceMeters?: number;
