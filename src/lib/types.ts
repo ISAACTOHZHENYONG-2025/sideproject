@@ -13,5 +13,14 @@ export interface Venue {
   dietaryTags: string[];
   menuItems: MenuItem[];
   createdAt?: string;
+  // Set on venues imported from Google Places
+  placeId?: string;
+  latitude?: number;
+  longitude?: number;
+  distanceMeters?: number;
+  rating?: number;
+  ratingCount?: number;
+  mapsUrl?: string;
+  source?: string;
 }
 

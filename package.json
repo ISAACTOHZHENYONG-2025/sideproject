@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "db:cli": "npx tsx scripts/db-cli.ts"
+    "db:cli": "npx tsx scripts/db-cli.ts",
+    "db:import-nearby": "npx tsx scripts/import-nearby-venues.ts"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",
