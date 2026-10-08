@@ -116,14 +116,9 @@ export default function HomePage({ initialFilters }: HomePageProps) {
 
         <main className="flex-1 px-3 pt-3 flex flex-col gap-3 pb-24">
           <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-1.5">
-              <div className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center">
-                <MaterialIcon name="psychology" className="text-[15px]" />
-              </div>
-              <h2 className="text-[15px] font-extrabold text-on-surface tracking-tight">
-                {engine === "gemini" ? "Gemini AI Top Matches" : "Top Matches"}
-              </h2>
-            </div>
+            <h2 className="text-[15px] font-extrabold text-on-surface tracking-tight">
+              {engine === "gemini" ? "Gemini AI Top Matches" : "Top Matches"}
+            </h2>
             {status === "ready" ? (
               <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#E6F7ED] text-primary tabular-nums">
                 {totalMatches} Found
