@@ -24,7 +24,7 @@ runScript(async () => {
   const rows = venues.map((v) => [
     v.id,
     v.name,
-    v.isHalal ? "Y" : "N",
+    yesNo(v.isHalal),
     // Blank means nobody has checked yet
     yesNo(v.vegetarian),
     yesNo(v.vegan),

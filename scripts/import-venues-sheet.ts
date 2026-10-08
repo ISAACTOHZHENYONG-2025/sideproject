@@ -108,9 +108,10 @@ runScript(async () => {
     const data: Update = {};
     const changes: string[] = [];
 
-    if (typeof halal === "boolean" && halal !== Boolean(venue.isHalal)) {
+    if (typeof halal === "boolean" && halal !== venue.isHalal) {
       data.isHalal = halal;
-      changes.push(`halal ${venue.isHalal ? "Y" : "N"} -> ${halal ? "Y" : "N"}`);
+      const was = venue.isHalal === undefined ? "blank" : venue.isHalal ? "Y" : "N";
+      changes.push(`halal ${was} -> ${halal ? "Y" : "N"}`);
     }
     const flags = [
       ["vegetarian", "vegetarian", vegetarian],

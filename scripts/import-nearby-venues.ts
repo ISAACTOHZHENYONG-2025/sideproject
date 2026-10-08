@@ -188,7 +188,8 @@ function toVenue(place: GooglePlace): ImportedVenue | null {
     location: place.formattedAddress ?? name,
     avgPriceMYR,
     avgPrepTimeMins: DEFAULT_PREP_MINS,
-    isHalal: true, // halal by default for now; correct it in the venues sheet
+    // Left unset (not checked) unless Google lists it as a halal restaurant; confirm in the venues sheet
+    isHalal: place.types?.includes("halal_restaurant") ? true : undefined,
     vegetarian: place.servesVegetarianFood, // Google's answer; vegan and noSeafood are filled in by hand
     dietaryTags,
     menuItems: [{ itemName: "Typical meal", priceMYR: avgPriceMYR }], // /api/decide needs at least one item

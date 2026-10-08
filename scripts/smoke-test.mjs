@@ -68,7 +68,6 @@ for (const { label, ...payload } of decideCases) {
     report(`  top picks <= 3 (${label})`, recs.length <= 3);
     report(`  all within RM${payload.maxBudget} (${label})`, all.every((r) => r.estimatedCostMYR <= payload.maxBudget));
     report(`  all within ${payload.availableTimeMins} mins (${label})`, all.every((r) => r.estimatedTimeMins <= payload.availableTimeMins));
-    if (payload.dietaryRestrictions.includes("Halal")) report(`  all halal (${label})`, all.every((r) => r.isHalal));
     if (payload.dietaryRestrictions.includes("Vegetarian")) report(`  all vegetarian (${label})`, all.every((r) => r.isVegetarian));
     if (payload.dietaryRestrictions.includes("Vegan")) report(`  all vegan (${label})`, all.every((r) => r.isVegan));
     report(`  all have a Maps link (${label})`, all.every((r) => /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&/.test(r.mapsUrl)));

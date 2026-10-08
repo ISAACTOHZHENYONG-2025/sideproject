@@ -194,7 +194,7 @@ function toVenueMatch(venue: Venue, drive: boolean): VenueMatch {
   return {
     venueName: venue.name,
     estimatedCostMYR: venue.avgPriceMYR,
-    isHalal: Boolean(venue.isHalal),
+    isHalal: venue.isHalal === true, // true only when checked; unchecked venues carry no halal claim
     isVegetarian: venue.vegetarian === true || venue.vegan === true,
     isVegan: venue.vegan === true,
     allergyNotes: venue.allergyNotes,
