@@ -53,7 +53,6 @@ const EXCLUDED_PLACE_IDS = new Set([
   "ChIJz3YLAttLzDERo6nhGrc7X10", // RC Deaf Missions Malaysia: mainly a charity
   "ChIJvYs81PBJzDERo2c1JXNRmvI", // OHMYKASEH
 ]);
-const DEFAULT_PREP_MINS = 10;
 const DUPLICATE_DISTANCE_M = 60;
 
 const FIELD_MASK = [
@@ -188,7 +187,6 @@ function toVenue(place: GooglePlace): ImportedVenue | null {
     name,
     location: place.formattedAddress ?? name,
     avgPriceMYR,
-    avgPrepTimeMins: DEFAULT_PREP_MINS,
     // Left unset (not checked) unless Google lists it as a halal restaurant; confirm in the venues sheet
     isHalal: place.types?.includes("halal_restaurant") ? true : undefined,
     // Google only says the menu has some veg dishes, so this is a reference, not the vegetarian flag

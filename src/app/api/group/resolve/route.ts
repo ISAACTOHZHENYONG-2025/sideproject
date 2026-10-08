@@ -137,7 +137,6 @@ export async function POST(req: NextRequest) {
           name: "KK12 Dining Hall (Raja Dr. Nazrin Shah)",
           location: "12th Residential College, Universiti Malaya (Shuttle Bus Stop)",
           avgPriceMYR: 8.5,
-          avgPrepTimeMins: 5,
           isHalal: true,
           dietaryTags: ["Halal", "Budget-Friendly", "Nasi Campur"],
           menuItems: [
@@ -150,7 +149,6 @@ export async function POST(req: NextRequest) {
           name: "Perdanasiswa Complex (KPS) Central Canteen",
           location: "Kompleks Perdanasiswa (Central Hub)",
           avgPriceMYR: 9.0,
-          avgPrepTimeMins: 7,
           isHalal: true,
           dietaryTags: ["Halal", "Economy Rice", "Student Union"],
           menuItems: [
@@ -162,7 +160,6 @@ export async function POST(req: NextRequest) {
           name: "Faculty of Science Food Court (FOS Bistro)",
           location: "Faculty of Science, near Department of Chemistry",
           avgPriceMYR: 11.0,
-          avgPrepTimeMins: 12,
           isHalal: true,
           dietaryTags: ["Halal", "Western", "Noodles"],
           menuItems: [

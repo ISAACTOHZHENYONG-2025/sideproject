@@ -65,7 +65,6 @@ interface VenueDoc {
   name: string;
   location: string;
   avgPriceMYR: number;
-  avgPrepTimeMins: number;
   isHalal: boolean;
   dietaryTags: string[];
   menuItems: { itemName: string; priceMYR: number }[];
@@ -82,7 +81,6 @@ async function listVenues(): Promise<VenueDoc[]> {
       name: data.name || "Unnamed",
       location: data.location || "Unknown",
       avgPriceMYR: Number(data.avgPriceMYR ?? 0),
-      avgPrepTimeMins: Number(data.avgPrepTimeMins ?? 0),
       isHalal: Boolean(data.isHalal),
       dietaryTags: Array.isArray(data.dietaryTags) ? data.dietaryTags : [],
       menuItems: Array.isArray(data.menuItems) ? data.menuItems : [],
@@ -107,7 +105,6 @@ async function handleViewAll() {
     console.log(`    ID:             ${v.id}`);
     console.log(`    Location:       ${v.location}`);
     console.log(`    Avg Price:      RM${v.avgPriceMYR.toFixed(2)}`);
-    console.log(`    Prep Time:      ${v.avgPrepTimeMins} mins`);
     console.log(`    Halal:          ${v.isHalal ? "Yes ✅" : "No ❌"}`);
     console.log(`    Tags:           ${v.dietaryTags.join(", ") || "None"}`);
     if (v.menuItems.length > 0) {
@@ -129,12 +126,10 @@ async function handleAdd() {
   }
   const location = await ask("Location (e.g. 2nd Residential College): ");
   const priceStr = await ask("Average Price in MYR (e.g. 8.5): ");
-  const timeStr = await ask("Average Prep Time in Mins (e.g. 10): ");
   const halalStr = await ask("Is it Halal? (y/n, default y): ");
   const tagsStr = await ask("Dietary tags (comma-separated, e.g. Halal, Budget, Noodles): ");
 
   const avgPriceMYR = parseFloat(priceStr) || 10;
-  const avgPrepTimeMins = parseInt(timeStr) || 10;
   const isHalal = halalStr.toLowerCase() !== "n";
   const dietaryTags = tagsStr
     ? tagsStr.split(",").map((t) => t.trim()).filter(Boolean)
@@ -154,7 +149,6 @@ async function handleAdd() {
     name,
     location: location || "Universiti Malaya",
     avgPriceMYR,
-    avgPrepTimeMins,
     isHalal,
     dietaryTags,
     menuItems,
@@ -188,14 +182,12 @@ async function handleEdit() {
   const name = await ask(`New Name [${target.name}]: `);
   const location = await ask(`New Location [${target.location}]: `);
   const priceStr = await ask(`New Avg Price [${target.avgPriceMYR}]: `);
-  const timeStr = await ask(`New Prep Time mins [${target.avgPrepTimeMins}]: `);
   const halalStr = await ask(`Is Halal? (y/n) [${target.isHalal ? "y" : "n"}]: `);
 
   const updates: Partial<VenueDoc> = {};
   if (name) updates.name = name;
   if (location) updates.location = location;
   if (priceStr) updates.avgPriceMYR = parseFloat(priceStr);
-  if (timeStr) updates.avgPrepTimeMins = parseInt(timeStr);
   if (halalStr) updates.isHalal = halalStr.toLowerCase() === "y";
 
   if (Object.keys(updates).length === 0) {

@@ -8,7 +8,6 @@ export interface Venue {
   name: string;
   location: string;
   avgPriceMYR: number;
-  avgPrepTimeMins: number;
   // true: checked and halal (shows the HALAL badge). false: checked and not halal. Unset: not checked yet.
   isHalal?: boolean;
   // Diet and allergy info, filled in from the venues sheet. Unset means nobody has checked yet.
