@@ -37,6 +37,8 @@ runScript(async () => {
     yesNo(v.hasVegetarianOptions),
     yesNo(v.vegan),
     yesNo(v.noSeafoodOption),
+    yesNo(v.nonHalal),
+    yesNo(v.noBeefOption),
     priceCell(v),
     // Empty for venues that haven't been filled in yet; kept on re-export so nothing is lost.
     (v.serves ?? []).join(", "),
@@ -50,10 +52,11 @@ runScript(async () => {
     v.distanceMeters,
     v.location,
     v.mapsUrl ?? googleMapsUrl(v),
+    v.researchNotes,
   ]);
 
   // The BOM makes Excel open the file as UTF-8 so names with accents survive.
   fs.writeFileSync(file, BOM + toCsv([[...SHEET_COLUMNS], ...rows]), "utf-8");
   console.log(`Wrote ${venues.length} venue(s) to ${file}.`);
-  console.log("Fill in halal, vegetarian, vegan, noSeafood (Y/N), priceMYR (a range, e.g. 12-25), serves (e.g. \"rice, noodles\") and allergyNotes, then run: npm run db:import-sheet -- --dry-run");
+  console.log("Fill in halal, vegetarian, vegan, noSeafood, nonHalal, noBeef (Y/N), priceMYR (a range, e.g. 12-25), serves (e.g. \"rice, noodles\") and allergyNotes, then run: npm run db:import-sheet -- --dry-run");
 });

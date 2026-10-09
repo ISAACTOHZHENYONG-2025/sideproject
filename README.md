@@ -59,7 +59,7 @@ Venues live in the Firestore `venues` collection. Every script reads its keys fr
 
 | Command | What it does |
 | --- | --- |
-| `npm run db:import-nearby` | Imports food places around UM from Google Places. Supports `--dry-run`, `--extent=<metres>`, `--max-calls=<n>`, `--resume` and `--use-cache`. Safe to re-run: places are keyed by Google place ID and near-duplicates are skipped. |
+| `npm run db:import-nearby` | Imports food places around UM from Google Places. Supports `--area=<um, bangsar, ss2 or taman-paramount>`, `--min-reviews=<n>`, `--dry-run`, `--extent=<metres>`, `--max-calls=<n>`, `--resume` and `--use-cache`. Safe to re-run: places are keyed by Google place ID and near-duplicates are skipped. |
 | `npm run db:export-sheet` | Writes every venue to `venues.csv` so halal, diet flags, price, foods and allergy notes can be filled in by hand. |
 | `npm run db:import-sheet` | Reads the edited `venues.csv` back into Firestore. Use `--dry-run` first. Blank cells leave a field unchanged. |
 | `npm run db:cli` | Interactive terminal tool to view, add, edit and delete venues. |

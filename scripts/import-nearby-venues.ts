@@ -1,8 +1,10 @@
 // Imports food places around Universiti Malaya from the Google Places API (New) into Firestore `venues`.
 //   npm run db:import-nearby                    # write to Firestore
 //   npm run db:import-nearby -- --dry-run       # preview only, nothing is written
-//   npm run db:import-nearby -- --extent=1500   # search radius around the campus centre in metres (default 1500)
+//   npm run db:import-nearby -- --area=bangsar  # search another food area instead of the campus (see AREAS)
+//   npm run db:import-nearby -- --extent=1500   # search radius around the area's centre in metres (default per area)
 //   npm run db:import-nearby -- --max-calls=50  # cap on Places API calls this run (default 95)
+//   npm run db:import-nearby -- --min-reviews=50 # skip places with fewer Google reviews (default per area)
 //   npm run db:import-nearby -- --resume        # carry on a search that stopped at the daily quota
 //   npm run db:import-nearby -- --use-cache     # reuse the saved Google results (no API calls)
 // Needs GOOGLE_MAPS_API_KEY in .env.local (Places API (New) must be enabled on the key's project).
@@ -26,11 +28,29 @@ loadEnvLocal();
 
 // ---- Config ----------------------------------------------------------------
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY; // <- set this in .env.local
-const DEFAULT_EXTENT_M = 1500;
+// Areas the grid can cover. Distances are always measured from the UM campus centre, whatever the area.
+// Centres are Google's own centre for each neighbourhood (Places Text Search). Off campus, only places with
+// at least minReviews Google reviews are imported, which drops dead listings, home bakers and unnamed stalls.
+const AREAS: Record<string, { label: string; center: LatLng; extent: number; minReviews: number }> = {
+  um: { label: "the campus centre", center: UM_CAMPUS_CENTER, extent: 1500, minReviews: 0 },
+  bangsar: {
+    label: "Bangsar Baru (Jalan Telawi)",
+    center: { latitude: 3.1329, longitude: 101.6714 },
+    extent: 700,
+    minReviews: 50,
+  },
+  ss2: { label: "SS2, Petaling Jaya", center: { latitude: 3.1203, longitude: 101.6223 }, extent: 700, minReviews: 50 },
+  "taman-paramount": {
+    label: "Taman Paramount",
+    center: { latitude: 3.1081, longitude: 101.6277 },
+    extent: 500,
+    minReviews: 50,
+  },
+};
 const DEFAULT_MAX_CALLS = 95;
 // Raw Google results and unsearched cells are saved here after every call, so a dry run can be followed
-// by a real run without paying twice, and a search stopped by the daily quota can be resumed.
-const CACHE_FILE = "places-cache.json";
+// by a real run without paying twice, and a search stopped by the daily quota can be resumed. One file per area.
+const cacheFile = (area: string) => (area === "um" ? "places-cache.json" : `places-cache-${area}.json`);
 const CELL_SPACING_M = 500;
 const MAX_RESULTS = 20;
 const FOOD_TYPES = ["restaurant", "cafe", "coffee_shop", "bakery", "fast_food_restaurant", "meal_takeaway", "food_court"];
@@ -53,6 +73,8 @@ const EXCLUDED_PLACE_IDS = new Set([
   "ChIJpU8GKgBLzDERg9SUZYpxNSs", // As grocer: grocery shop
   "ChIJz3YLAttLzDERo6nhGrc7X10", // RC Deaf Missions Malaysia: mainly a charity
   "ChIJvYs81PBJzDERo2c1JXNRmvI", // OHMYKASEH
+  "ChIJ_dKxmaJJzDERzSXG5HlWQrQ", // Drip Loft, Bangsar: vape shop listed as a cafe
+  "ChIJzQLTGRZJzDERETsPm6PGRs0", // Vernakular Store, Bangsar: homeware shop; its coffee bar is Peep Coffee
 ]);
 const DUPLICATE_DISTANCE_M = 60;
 
@@ -79,6 +101,13 @@ const FIELD_MASK = [
   "places.dineIn",
   "places.takeout",
   "places.delivery",
+  "places.servesBeer",
+  "places.servesWine",
+  "places.servesCocktails",
+  // Not imported; kept in the cache as evidence when filling in the venues sheet's serves and notes.
+  "places.servesDessert",
+  "places.servesCoffee",
+  "places.reviews",
 ].join(",");
 
 // ---- Types -----------------------------------------------------------------
@@ -108,6 +137,12 @@ interface GooglePlace {
   dineIn?: boolean;
   takeout?: boolean;
   delivery?: boolean;
+  servesBeer?: boolean;
+  servesWine?: boolean;
+  servesCocktails?: boolean;
+  servesDessert?: boolean;
+  servesCoffee?: boolean;
+  reviews?: { rating?: number; text?: { text: string } }[];
 }
 
 type ImportedVenue = Venue & {
@@ -152,11 +187,13 @@ function estimatePriceMYR(place: GooglePlace): PriceRange {
   return PRICE_LEVEL_MYR[place.priceLevel ?? ""] ?? DEFAULT_PRICE_MYR;
 }
 
+// JAKIM does not certify premises that serve alcohol.
+const servesAlcohol = (place: GooglePlace) => Boolean(place.servesBeer || place.servesWine || place.servesCocktails);
+
 function buildTags(place: GooglePlace, name: string) {
   const tags = new Set<string>();
-  if (place.types?.includes("halal_restaurant") || /\b(halal|muslim|mamak|nasi|malay|ayam)\b/i.test(name)) {
-    tags.add("Halal");
-  }
+  const halalHint = place.types?.includes("halal_restaurant") || /\b(halal|muslim|mamak|nasi|malay|ayam)\b/i.test(name);
+  if (halalHint && !servesAlcohol(place)) tags.add("Halal");
   if (place.servesVegetarianFood) tags.add("Vegetarian");
   if (place.primaryType) tags.add(place.primaryType.replace(/_/g, " "));
   if ((place.rating ?? 0) >= 4.5) tags.add("Top Rated");
@@ -177,7 +214,8 @@ function buildServices(place: GooglePlace) {
 
 function toVenue(place: GooglePlace): ImportedVenue | null {
   const name = place.displayName?.text?.trim();
-  if (!name || !place.location || place.businessStatus === "CLOSED_PERMANENTLY") return null;
+  // Temporarily closed places are left out too, so nobody is sent to a shuttered shop; a later run adds them back.
+  if (!name || !place.location || place.businessStatus?.startsWith("CLOSED_")) return null;
   if (EXCLUDED_PLACE_IDS.has(place.id)) return null;
   if (place.primaryType && !FOOD_PRIMARY_TYPE.test(place.primaryType)) return null;
 
@@ -189,8 +227,8 @@ function toVenue(place: GooglePlace): ImportedVenue | null {
     location: place.formattedAddress ?? name,
     priceMinMYR: price.min,
     priceMaxMYR: price.max,
-    // Left unset (not checked) unless Google lists it as a halal restaurant; confirm in the venues sheet
-    isHalal: place.types?.includes("halal_restaurant") ? true : undefined,
+    // Left unset (not checked) unless Google lists it as a halal restaurant or as serving alcohol; confirm in the venues sheet
+    isHalal: servesAlcohol(place) ? false : place.types?.includes("halal_restaurant") ? true : undefined,
     // Google only says the menu has some veg dishes, so this is a reference, not the vegetarian flag
     hasVegetarianOptions: place.servesVegetarianFood,
     dietaryTags,
@@ -214,11 +252,10 @@ function withoutUndefined<T extends object>(obj: T) {
   return Object.fromEntries(Object.entries(obj).filter(([, val]) => val !== undefined));
 }
 
-// Point offset from the campus centre by metres north/east.
-function offset(northM: number, eastM: number): LatLng {
-  const latitude = UM_CAMPUS_CENTER.latitude + northM / 111320;
-  const longitude =
-    UM_CAMPUS_CENTER.longitude + eastM / (111320 * Math.cos((UM_CAMPUS_CENTER.latitude * Math.PI) / 180));
+// Point offset from the area's centre by metres north/east.
+function offset(center: LatLng, northM: number, eastM: number): LatLng {
+  const latitude = center.latitude + northM / 111320;
+  const longitude = center.longitude + eastM / (111320 * Math.cos((center.latitude * Math.PI) / 180));
   return { latitude, longitude };
 }
 
@@ -252,16 +289,17 @@ function numberArg(name: string, fallback: number) {
 
 type Cell = { north: number; east: number; spacing: number };
 type SearchCache = { extent: number; calls: number; places: GooglePlace[]; pending: Cell[] };
+type SearchArea = { label: string; center: LatLng; extent: number; cacheFile: string };
 
-function readCache(): SearchCache | undefined {
-  if (!fs.existsSync(CACHE_FILE)) return undefined;
-  return JSON.parse(fs.readFileSync(CACHE_FILE, "utf-8")) as SearchCache;
+function readCache(file: string): SearchCache | undefined {
+  if (!fs.existsSync(file)) return undefined;
+  return JSON.parse(fs.readFileSync(file, "utf-8")) as SearchCache;
 }
 
-// Searches a grid of cells around the campus centre, splitting any cell that hits Google's 20-result cap.
+// Searches a grid of cells around the area's centre, splitting any cell that hits Google's 20-result cap.
 // Progress is saved after every call, so a run stopped by the daily quota can carry on with --resume.
-async function searchGrid(extent: number, maxCalls: number, resume: boolean) {
-  const cache = resume ? readCache() : undefined;
+async function searchGrid({ label, center, extent, cacheFile }: SearchArea, maxCalls: number, resume: boolean) {
+  const cache = resume ? readCache(cacheFile) : undefined;
   let queue: Cell[];
   const found = new Map<string, GooglePlace>();
   let totalCalls = 0;
@@ -282,12 +320,12 @@ async function searchGrid(extent: number, maxCalls: number, resume: boolean) {
         queue.push({ north: i * CELL_SPACING_M, east: j * CELL_SPACING_M, spacing: CELL_SPACING_M });
       }
     }
-    console.log(`Searching ${queue.length} cells within about ${extent} m of the campus centre (max ${maxCalls} calls)...`);
+    console.log(`Searching ${queue.length} cells within about ${extent} m of ${label} (max ${maxCalls} calls)...`);
   }
 
   const save = () =>
     fs.writeFileSync(
-      CACHE_FILE,
+      cacheFile,
       JSON.stringify({ extent, calls: totalCalls, places: [...found.values()], pending: queue } satisfies SearchCache),
     );
 
@@ -303,7 +341,7 @@ async function searchGrid(extent: number, maxCalls: number, resume: boolean) {
     const radius = Math.ceil((cell.spacing * Math.SQRT2) / 2) + 10;
     let places: GooglePlace[];
     try {
-      places = await searchNearby(offset(cell.north, cell.east), radius);
+      places = await searchNearby(offset(center, cell.north, cell.east), radius);
     } catch (err) {
       if (err instanceof QuotaError) {
         stopReason = "Google's daily Places quota is used up";
@@ -334,13 +372,13 @@ async function searchGrid(extent: number, maxCalls: number, resume: boolean) {
   return found;
 }
 
-function loadCache(): Map<string, GooglePlace> {
-  const cache = readCache();
+function loadCache(file: string): Map<string, GooglePlace> {
+  const cache = readCache(file);
   if (!cache) {
-    console.error(`${CACHE_FILE} not found. Run once without --use-cache first.`);
+    console.error(`${file} not found. Run once without --use-cache first.`);
     process.exit(1);
   }
-  console.log(`Using ${cache.places.length} cached place(s) from ${CACHE_FILE} (no Places API calls).`);
+  console.log(`Using ${cache.places.length} cached place(s) from ${file} (no Places API calls).`);
   if (cache.pending.length > 0) console.log(`  The cached search is incomplete: ${cache.pending.length} cell(s) left.`);
   return new Map(cache.places.map((p) => [p.id, p]));
 }
@@ -348,8 +386,16 @@ function loadCache(): Map<string, GooglePlace> {
 // ---- Main ------------------------------------------------------------------
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
-  const extent = numberArg("extent", DEFAULT_EXTENT_M);
+  const areaName = process.argv.find((a) => a.startsWith("--area="))?.split("=")[1] ?? "um";
+  const preset = AREAS[areaName];
+  if (!preset) {
+    console.error(`--area must be one of: ${Object.keys(AREAS).join(", ")}.`);
+    process.exit(1);
+  }
+  const extent = numberArg("extent", preset.extent);
+  const area: SearchArea = { label: preset.label, center: preset.center, extent, cacheFile: cacheFile(areaName) };
   const maxCalls = numberArg("max-calls", DEFAULT_MAX_CALLS);
+  const minReviews = numberArg("min-reviews", preset.minReviews);
 
   if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY.includes("your_google_maps_api_key_here")) {
     console.error("Missing GOOGLE_MAPS_API_KEY. Add it to .env.local (see .env.local.example).");
@@ -363,16 +409,21 @@ async function main() {
     console.error("--max-calls must be a whole number above 0.");
     process.exit(1);
   }
+  if (!Number.isInteger(minReviews) || minReviews < 0) {
+    console.error("--min-reviews must be a whole number, 0 or more.");
+    process.exit(1);
+  }
 
   const found = process.argv.includes("--use-cache")
-    ? loadCache()
-    : await searchGrid(extent, maxCalls, process.argv.includes("--resume"));
+    ? loadCache(area.cacheFile)
+    : await searchGrid(area, maxCalls, process.argv.includes("--resume"));
 
-  const venues = [...found.values()]
-    .map(toVenue)
-    .filter((v): v is ImportedVenue => v !== null)
+  const open = [...found.values()].map(toVenue).filter((v): v is ImportedVenue => v !== null);
+  const venues = open
+    .filter((v) => (v.ratingCount ?? 0) >= minReviews)
     .sort((a, b) => a.distanceMeters - b.distanceMeters);
-  console.log(`${venues.length} open food place(s) after dropping closed and non-food places.`);
+  console.log(`${open.length} open food place(s) after dropping closed and non-food places.`);
+  if (minReviews > 0) console.log(`${venues.length} with at least ${minReviews} Google reviews; the rest are skipped.`);
 
   // 2. Compare with what's already in Firestore
   const db = connectFirestore();

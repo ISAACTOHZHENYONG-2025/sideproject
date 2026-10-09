@@ -1,4 +1,4 @@
-// Reads venues.csv (from db:export-sheet) and updates each venue's halal, diet flags, price range, food types and allergy notes by id.
+// Reads venues.csv (from db:export-sheet) and updates each venue's halal, diet flags, price range, food types, allergy notes and research notes by id.
 // priceMYR holds a range like "12-25"; a single "15" sets min and max to 15.
 //   npm run db:import-sheet -- --dry-run   # show what would change, write nothing
 //   npm run db:import-sheet                # write the changes to Firestore
@@ -18,11 +18,23 @@ const PLACEHOLDER_MENU_ITEM = "Typical meal";
 type Update = Partial<
   Pick<
     Venue,
-    "isHalal" | "vegetarian" | "vegan" | "noSeafoodOption" | "allergyNotes" | "priceMinMYR" | "priceMaxMYR" | "serves" | "menuItems"
+    | "isHalal"
+    | "vegetarian"
+    | "vegan"
+    | "noSeafoodOption"
+    | "nonHalal"
+    | "noBeefOption"
+    | "allergyNotes"
+    | "researchNotes"
+    | "priceMinMYR"
+    | "priceMaxMYR"
+    | "serves"
+    | "menuItems"
   >
 > & { avgPriceMYR?: FieldValue };
 
-const MAX_NOTE_LENGTH = 200;
+const MAX_ALLERGY_NOTE_LENGTH = 200;
+const MAX_RESEARCH_NOTE_LENGTH = 1000;
 
 function parseYesNo(column: string, value: string): boolean | undefined | Error {
   const v = value.trim().toLowerCase();
@@ -32,9 +44,9 @@ function parseYesNo(column: string, value: string): boolean | undefined | Error 
   return new Error(`${column} must be Y or N, got "${value}"`);
 }
 
-function parseNote(value: string): string | undefined | Error {
+function parseNote(column: string, value: string, maxLength: number): string | undefined | Error {
   const note = value.trim().replace(/\s+/g, " ");
-  if (note.length > MAX_NOTE_LENGTH) return new Error(`allergyNotes is over ${MAX_NOTE_LENGTH} characters`);
+  if (note.length > maxLength) return new Error(`${column} is over ${maxLength} characters`);
   return note || undefined;
 }
 
@@ -90,9 +102,16 @@ runScript(async () => {
     const vegetarian = parseYesNo("vegetarian", cell("vegetarian"));
     const vegan = parseYesNo("vegan", cell("vegan"));
     const noSeafood = parseYesNo("noSeafood", cell("noseafood"));
-    const note = parseNote(cell("allergynotes"));
+    // Optional columns: sheets exported before they existed leave these flags alone.
+    const nonHalal = parseYesNo("nonHalal", cell("nonhalal"));
+    const noBeef = parseYesNo("noBeef", cell("nobeef"));
+    const note = parseNote("allergyNotes", cell("allergynotes"), MAX_ALLERGY_NOTE_LENGTH);
+    // Optional column: sheets exported before it existed leave research notes alone.
+    const research = parseNote("researchNotes", cell("researchnotes"), MAX_RESEARCH_NOTE_LENGTH);
     const price = parsePriceRange(cell("pricemyr"), MAX_PRICE_MYR);
-    const problems = [halal, vegetarian, vegan, noSeafood, note, price].filter((v): v is Error => v instanceof Error);
+    const problems = [halal, vegetarian, vegan, noSeafood, nonHalal, noBeef, note, research, price].filter(
+      (v): v is Error => v instanceof Error,
+    );
     if (problems.length > 0) {
       console.log(`SKIP  ${label}: ${problems.map((p) => p.message).join("; ")}`);
       skipped++;
@@ -112,6 +131,8 @@ runScript(async () => {
       ["vegetarian", "vegetarian", vegetarian],
       ["vegan", "vegan", vegan],
       ["noSeafood", "noSeafoodOption", noSeafood],
+      ["nonHalal", "nonHalal", nonHalal],
+      ["noBeef", "noBeefOption", noBeef],
     ] as const;
     for (const [label, field, value] of flags) {
       if (typeof value === "boolean" && value !== venue[field]) {
@@ -123,6 +144,10 @@ runScript(async () => {
     if (typeof note === "string" && note !== venue.allergyNotes) {
       data.allergyNotes = note;
       changes.push(`allergyNotes "${venue.allergyNotes ?? ""}" -> "${note}"`);
+    }
+    if (typeof research === "string" && research !== venue.researchNotes) {
+      data.researchNotes = research;
+      changes.push(venue.researchNotes ? "researchNotes edited" : "researchNotes added");
     }
     if (price && !(price instanceof Error) && (price.min !== venue.priceMinMYR || price.max !== venue.priceMaxMYR || venue.avgPriceMYR !== undefined)) {
       data.priceMinMYR = price.min;

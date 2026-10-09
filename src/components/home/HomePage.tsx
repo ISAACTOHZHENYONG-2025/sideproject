@@ -1,16 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DecideResponseData, VenueMatch } from "@/app/api/decide/route";
+import type { DecideResponseData, RecommendationItem, VenueMatch } from "@/app/api/decide/route";
 import BottomNav from "@/components/BottomNav";
 import { decide, toDecidePayload } from "@/lib/api";
+import { meetsDiet } from "@/lib/diet";
 import type { FilterDraft } from "@/lib/filters";
 import FilterBottomSheet from "./FilterBottomSheet";
 import FoodMatchCard from "./FoodMatchCard";
 import HomeHeader from "./HomeHeader";
 import MaterialIcon from "@/components/ui/MaterialIcon";
 import MoreMatchesList from "./MoreMatchesList";
-import { fromRecommendation, type FoodMatch } from "./foodMatch";
+import { fromRecommendation } from "./foodMatch";
 
 type Status = "loading" | "ready" | "error";
 
@@ -18,12 +19,16 @@ type HomePageProps = {
   initialFilters: FilterDraft;
 };
 
-function countChanges(a: FilterDraft, b: FilterDraft) {
+// Filter changes that need a refetch. A newly ticked diet tag doesn't: the feed hides non-matching cards itself.
+function countChanges(applied: FilterDraft, fetched: FilterDraft) {
+  const a = toDecidePayload(applied);
+  const b = toDecidePayload(fetched);
   let changes = 0;
-  if (a.craving.trim().toLowerCase() !== b.craving.trim().toLowerCase()) changes++;
-  if (a.budget !== b.budget) changes++;
+  if (applied.craving.trim().toLowerCase() !== fetched.craving.trim().toLowerCase()) changes++;
+  if (a.maxBudget !== b.maxBudget) changes++;
   if (a.maxDistanceKm !== b.maxDistanceKm) changes++;
-  if ([...a.tags].sort().join() !== [...b.tags].sort().join()) changes++;
+  // An unticked diet tag does: the server left out the venues it would bring back
+  if (b.dietaryRestrictions.some((tag) => !a.dietaryRestrictions.includes(tag))) changes++;
   return changes;
 }
 
@@ -45,8 +50,8 @@ export default function HomePage({ initialFilters }: HomePageProps) {
   const [applied, setApplied] = useState<FilterDraft>(initialFilters);
   const [draft, setDraft] = useState<FilterDraft>(initialFilters);
   const [fetchedFor, setFetchedFor] = useState<FilterDraft | null>(null);
-  const [matches, setMatches] = useState<FoodMatch[]>([]);
-  const [moreMatches, setMoreMatches] = useState<VenueMatch[]>([]);
+  const [recommendations, setRecommendations] = useState<RecommendationItem[]>([]);
+  const [fetchedMoreMatches, setFetchedMoreMatches] = useState<VenueMatch[]>([]);
   const [engine, setEngine] = useState<DecideResponseData["engine"]>("fallback");
   const [showMore, setShowMore] = useState(false);
   const [status, setStatus] = useState<Status>("loading");
@@ -58,12 +63,8 @@ export default function HomePage({ initialFilters }: HomePageProps) {
     try {
       const data = await decide(toDecidePayload(filters));
       if (requestId !== latestRequest.current) return;
-      setMatches(
-        data.recommendations.map((rec, index) =>
-          fromRecommendation(rec, index, filters.budget),
-        ),
-      );
-      setMoreMatches(data.moreMatches);
+      setRecommendations(data.recommendations);
+      setFetchedMoreMatches(data.moreMatches);
       setEngine(data.engine);
       setShowMore(false);
       setFetchedFor(filters);
@@ -83,6 +84,14 @@ export default function HomePage({ initialFilters }: HomePageProps) {
 
   const filtersChanged = fetchedFor ? countChanges(applied, fetchedFor) : 0;
   const stale = filtersChanged > 0;
+
+  const dietFilter = toDecidePayload(applied).dietaryRestrictions;
+  // The budget the server used, which "Budget Meal" caps at RM10
+  const fetchedBudget = fetchedFor ? toDecidePayload(fetchedFor).maxBudget : 0;
+  const matches = recommendations
+    .filter((rec) => meetsDiet(rec.diet, dietFilter))
+    .map((rec, index) => fromRecommendation(rec, index, fetchedBudget));
+  const moreMatches = fetchedMoreMatches.filter((match) => meetsDiet(match.diet, dietFilter));
 
   const applyFilters = () => {
     setApplied(draft);
@@ -146,7 +155,7 @@ export default function HomePage({ initialFilters }: HomePageProps) {
             </div>
           ) : null}
 
-          {status === "ready" && matches.length === 0 ? (
+          {status === "ready" && matches.length === 0 && moreMatches.length === 0 ? (
             <div className="rounded-2xl border border-[#E9ECEF] bg-surface-container-lowest p-4 text-center">
               <p className="text-sm font-bold">No matches for these filters</p>
               <p className="text-xs text-on-surface-variant mt-1">
