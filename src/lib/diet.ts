@@ -1,6 +1,6 @@
 import type { Venue } from "./types";
 
-type DietFields = Pick<Venue, "isHalal" | "vegetarian" | "vegan" | "noSeafoodOption">;
+export type DietFields = Pick<Venue, "isHalal" | "vegetarian" | "vegan" | "noSeafoodOption" | "nonHalal" | "noBeefOption">;
 
 // A venue only passes a diet filter when it is explicitly marked as meeting it. A blank (unknown) value
 // does not pass, so nobody is shown a place nobody has checked. Fill the values in with the venues sheet.
@@ -11,6 +11,8 @@ const DIET_RULES: Record<string, (venue: DietFields) => boolean> = {
   Vegetarian: (v) => v.vegetarian === true || v.vegan === true,
   Vegan: (v) => v.vegan === true,
   "No Seafood": (v) => v.noSeafoodOption === true,
+  "Non-Halal": (v) => v.nonHalal === true,
+  "No Beef": (v) => v.noBeefOption === true,
 };
 
 export function meetsDiet(venue: DietFields, restrictions: string[]): boolean {

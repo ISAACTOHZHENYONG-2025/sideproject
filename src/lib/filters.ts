@@ -27,6 +27,8 @@ export const DIET_TAGS = [
   { id: "Vegetarian", label: "Vegetarian" },
   { id: "Vegan", label: "Vegan" },
   { id: "No Seafood", label: "No Seafood" },
+  { id: "Non-Halal", label: "Non-Halal" },
+  { id: "No Beef", label: "No Beef" },
   { id: "Budget Meal", label: "Budget Meal < RM10" },
 ];
 

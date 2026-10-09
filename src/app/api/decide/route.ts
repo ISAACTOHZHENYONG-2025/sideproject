@@ -4,7 +4,7 @@ import { db } from "@/lib/firebase";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
 import { googleMapsUrl } from "@/lib/maps";
-import { meetsDiet } from "@/lib/diet";
+import { meetsDiet, type DietFields } from "@/lib/diet";
 import { UM_CAMPUS_CENTER, distanceMeters, formatDistance } from "@/lib/geo";
 import { budgetComfort, fitsBudget, formatPriceRange, midpoint, venuePriceRange, type PriceRange } from "@/lib/price";
 
@@ -28,6 +28,8 @@ export interface VenueMatch {
   isHalal: boolean;
   isVegetarian: boolean;
   isVegan: boolean;
+  // The sheet's raw answers (blank = unchecked), so the feed can apply a newly ticked diet filter without a refetch
+  diet: DietFields;
   // Shown on the card as a warning; not a filter
   allergyNotes?: string;
   serves: string[];
@@ -262,6 +264,14 @@ function toVenueMatch(venue: Venue, price: PriceRange, budget: number): VenueMat
     isHalal: venue.isHalal === true, // true only when checked; unchecked venues carry no halal claim
     isVegetarian: venue.vegetarian === true || venue.vegan === true,
     isVegan: venue.vegan === true,
+    diet: {
+      isHalal: venue.isHalal,
+      vegetarian: venue.vegetarian,
+      vegan: venue.vegan,
+      noSeafoodOption: venue.noSeafoodOption,
+      nonHalal: venue.nonHalal,
+      noBeefOption: venue.noBeefOption,
+    },
     allergyNotes: venue.allergyNotes,
     serves: venue.serves ?? [],
     rating: venue.rating,
@@ -472,13 +482,23 @@ export async function POST(req: NextRequest) {
 
     if (candidates.length === 0) return respond("fallback", []);
 
+    // Keyword matches against serves, name, tags and menu, worked out once rather than inside the sorts
+    const cravingHits = new Set(
+      patterns.length === 0
+        ? candidates
+        : candidates.filter(({ venue }) => {
+            const text = venueSearchText(venue);
+            return patterns.some((p) => p.test(text));
+          }),
+    );
+    const matchesCraving = (c: Candidate) => cravingHits.has(c);
+
     // 3. Let Gemini pick the best 3 and order the rest by the craving
     const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
     if (apiKey) {
       try {
         // Send Gemini the 40 most promising venues (keyword matches first, then nearest); the rest follow
         // in code order. With a craving, only keyword matches are added back, as Gemini would have dropped the rest.
-        const matchesCraving = (c: Candidate) => patterns.length === 0 || patterns.some((p) => p.test(venueSearchText(c.venue)));
         const ordered = [...candidates].sort(
           (a, b) => Number(matchesCraving(b)) - Number(matchesCraving(a)) || rankByDistanceAndRating(a, b),
         );
@@ -491,14 +511,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. Code-only fallback: match the craving against serves, name, tags and menu, then rank
-    const ranked = candidates
-      .filter(({ venue }) => {
-        if (patterns.length === 0) return true;
-        const text = venueSearchText(venue);
-        return patterns.some((p) => p.test(text));
-      })
-      .sort(rankByDistanceAndRating);
+    // 4. Code-only fallback: keep the keyword matches, then rank
+    const ranked = candidates.filter(matchesCraving).sort(rankByDistanceAndRating);
 
     return respond(
       "fallback",

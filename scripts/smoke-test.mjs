@@ -75,7 +75,9 @@ for (const { label, ...payload } of decideCases) {
   if (Array.isArray(recs) && Array.isArray(more)) {
     const all = [...recs, ...more];
     report(`  top picks <= 3 (${label})`, recs.length <= 3);
-    report(`  all within RM${payload.maxBudget} (${label})`, all.every((r) => r.estimatedCostMYR <= payload.maxBudget));
+    report(`  cheapest meal within RM${payload.maxBudget} (${label})`, all.every((r) => r.priceMinMYR <= r.priceMaxMYR && r.priceMinMYR <= payload.maxBudget));
+    report(`  withinBudget matches price range (${label})`, all.every((r) => r.withinBudget === r.priceMaxMYR <= payload.maxBudget));
+    report(`  all carry diet answers (${label})`, all.every((r) => r.diet && typeof r.diet === "object"));
     if (payload.maxDistanceKm !== null) {
       report(`  all within ${payload.maxDistanceKm} km (${label})`, all.every((r) => r.distanceMeters === undefined || r.distanceMeters <= payload.maxDistanceKm * 1000));
     }

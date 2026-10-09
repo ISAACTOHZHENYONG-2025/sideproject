@@ -20,8 +20,14 @@ export interface Venue {
   vegan?: boolean;
   // True when there is a decent dish without seafood
   noSeafoodOption?: boolean;
+  // True when the venue is non-halal (e.g. serves pork or alcohol); separate from isHalal so it can be answered on its own
+  nonHalal?: boolean;
+  // True when there is a decent dish without beef
+  noBeefOption?: boolean;
   // Free-text warning shown on the venue card, e.g. "peanut sauce in most dishes"
   allergyNotes?: string;
+  // Where the sheet's halal, price and diet answers came from; for whoever edits the sheet, never shown in the app.
+  researchNotes?: string;
   dietaryTags: string[];
   menuItems: MenuItem[];
   // Food types the venue serves, e.g. ["rice", "noodles"]; filled in from the venues sheet.
