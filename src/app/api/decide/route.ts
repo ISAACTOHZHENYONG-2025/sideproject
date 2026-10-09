@@ -6,6 +6,7 @@ import type { Venue } from "@/lib/types";
 import { googleMapsUrl } from "@/lib/maps";
 import { meetsDiet } from "@/lib/diet";
 import { UM_CAMPUS_CENTER, distanceMeters, formatDistance } from "@/lib/geo";
+import { budgetComfort, fitsBudget, formatPriceRange, midpoint, venuePriceRange, type PriceRange } from "@/lib/price";
 
 export interface DecideRequestPayload {
   // Free text such as "noodles" or "mcd"; empty means anything.
@@ -19,7 +20,11 @@ export interface DecideRequestPayload {
 // A venue that fits the student's budget, diet and distance.
 export interface VenueMatch {
   venueName: string;
-  estimatedCostMYR: number;
+  // Usual meal price range; equal when the venue has a single price.
+  priceMinMYR: number;
+  priceMaxMYR: number;
+  // True when even the dearest usual meal is within budget; false when only the cheaper ones are.
+  withinBudget: boolean;
   isHalal: boolean;
   isVegetarian: boolean;
   isVegan: boolean;
@@ -51,7 +56,8 @@ const OFF_CAMPUS_DRIVING_HOTSPOTS: Venue[] = [
     placeId: "ChIJIfYLMzFJzDERPG9vHZ7DqiE",
     latitude: 3.13769,
     longitude: 101.62333,
-    avgPriceMYR: 15.0,
+    priceMinMYR: 10,
+    priceMaxMYR: 16,
     isHalal: true,
     serves: ["rice", "nasi lemak", "malay"],
     dietaryTags: ["Halal", "Famous Nasi Lemak", "Malay Cuisine", "Top Rated"],
@@ -66,7 +72,8 @@ const OFF_CAMPUS_DRIVING_HOTSPOTS: Venue[] = [
     placeId: "ChIJ99BxoplJzDERhX5gIi2_BGU",
     latitude: 3.12838,
     longitude: 101.67029,
-    avgPriceMYR: 14.0,
+    priceMinMYR: 8,
+    priceMaxMYR: 16,
     isHalal: true,
     serves: ["rice", "biryani", "roti", "noodles", "mamak"],
     dietaryTags: ["Halal", "Mamak", "Nasi Briyani", "Indian Muslim", "Late Night"],
@@ -82,7 +89,8 @@ const OFF_CAMPUS_DRIVING_HOTSPOTS: Venue[] = [
     placeId: "ChIJ-0H2IZtJzDEROu7FdjD33FY",
     latitude: 3.12264,
     longitude: 101.67102,
-    avgPriceMYR: 18.0,
+    priceMinMYR: 12,
+    priceMaxMYR: 20,
     isHalal: true,
     serves: ["indian", "vegetarian", "rice"],
     dietaryTags: ["Vegetarian", "Vegan-Friendly", "Indian Cuisine", "Healthy"],
@@ -97,7 +105,8 @@ const OFF_CAMPUS_DRIVING_HOTSPOTS: Venue[] = [
     placeId: "ChIJD0P7YHtLzDERKU8IXyctme0",
     latitude: 3.10982,
     longitude: 101.62251,
-    avgPriceMYR: 9.0,
+    priceMinMYR: 7,
+    priceMaxMYR: 12,
     isHalal: true,
     serves: ["rice", "nasi lemak", "noodles"],
     dietaryTags: ["Halal", "Supper Spot", "Budget-Friendly", "PJ Classic"],
@@ -115,7 +124,8 @@ const FALLBACK_CAMPUS_VENUES: Venue[] = [
     location: "12th Residential College, Universiti Malaya",
     latitude: 3.12568,
     longitude: 101.66084,
-    avgPriceMYR: 8.5,
+    priceMinMYR: 6,
+    priceMaxMYR: 10,
     isHalal: true,
     serves: ["rice", "nasi campur"],
     dietaryTags: ["Halal", "Budget-Friendly", "Nasi Campur"],
@@ -124,7 +134,8 @@ const FALLBACK_CAMPUS_VENUES: Venue[] = [
   {
     name: "Perdanasiswa Complex (KPS) Central Canteen",
     location: "Kompleks Perdanasiswa, Universiti Malaya",
-    avgPriceMYR: 9.0,
+    priceMinMYR: 7,
+    priceMaxMYR: 12,
     isHalal: true,
     serves: ["rice", "noodles"],
     dietaryTags: ["Halal", "Economy Rice", "Student Union"],
@@ -154,7 +165,7 @@ const CRAVING_ALIASES: Record<string, string[]> = {
   mamak: ["roti canai", "nasi kandar", "mee goreng mamak"],
 };
 
-type Candidate = { venue: Venue; match: VenueMatch };
+type Candidate = { venue: Venue; match: VenueMatch; price: PriceRange };
 // A ranked candidate, with the engine's reason when it gave one
 type Ranked = { candidate: Candidate; reasoning?: string };
 
@@ -237,7 +248,7 @@ function venueSearchText(venue: Venue) {
   );
 }
 
-function toVenueMatch(venue: Venue): VenueMatch {
+function toVenueMatch(venue: Venue, price: PriceRange, budget: number): VenueMatch {
   const hasCoords = typeof venue.latitude === "number" && typeof venue.longitude === "number";
   const meters = hasCoords
     ? Math.round(distanceMeters(UM_CAMPUS_CENTER, { latitude: venue.latitude!, longitude: venue.longitude! }))
@@ -245,7 +256,9 @@ function toVenueMatch(venue: Venue): VenueMatch {
 
   return {
     venueName: venue.name,
-    estimatedCostMYR: venue.avgPriceMYR,
+    priceMinMYR: price.min,
+    priceMaxMYR: price.max,
+    withinBudget: budgetComfort(price, budget) === 0,
     isHalal: venue.isHalal === true, // true only when checked; unchecked venues carry no halal claim
     isVegetarian: venue.vegetarian === true || venue.vegan === true,
     isVegan: venue.vegan === true,
@@ -257,18 +270,21 @@ function toVenueMatch(venue: Venue): VenueMatch {
   };
 }
 
-// Code-only ranking: nearest first (in 300 m bands), then best rated, then cheapest.
+// Code-only ranking: nearest first (in 300 m bands), then venues whose whole price range is within budget
+// before those where only the cheaper meals are, then best rated, then the lowest typical (midpoint) price.
 function rankByDistanceAndRating(a: Candidate, b: Candidate) {
   const band = (c: Candidate) => Math.round(nearness(c) / DISTANCE_BAND_M);
   return (
     band(a) - band(b) ||
+    Number(b.match.withinBudget) - Number(a.match.withinBudget) ||
     (b.match.rating ?? 0) - (a.match.rating ?? 0) ||
-    a.match.estimatedCostMYR - b.match.estimatedCostMYR
+    midpoint(a.price) - midpoint(b.price)
   );
 }
 
+
 function fallbackReason(c: Candidate, craving: string, hasPatterns: boolean) {
-  const parts = [`about RM${c.match.estimatedCostMYR.toFixed(2)}`];
+  const parts = [c.match.withinBudget ? `RM${formatPriceRange(c.price)}, all within budget` : `RM${formatPriceRange(c.price)}, cheaper meals within budget`];
   if (c.match.distanceMeters !== undefined) parts.unshift(`${formatDistance(c.match.distanceMeters)} from campus centre`);
   if (c.match.isHalal) parts.push("halal");
   if (c.match.rating) parts.push(`rated ${c.match.rating.toFixed(1)}`);
@@ -280,6 +296,7 @@ async function rankWithGemini(
   apiKey: string,
   candidates: Candidate[],
   craving: string,
+  maxBudget: number,
   dietaryRestrictions: string[],
 ): Promise<Ranked[]> {
   // Gemini answers with these ids, so branches that share a name stay separate venues
@@ -291,7 +308,8 @@ async function rankWithGemini(
     serves: match.serves,
     menuHints: (venue.menuItems ?? []).map((m) => m.itemName).filter((n) => n !== PLACEHOLDER_MENU_ITEM),
     tags: venue.dietaryTags ?? [],
-    priceMYR: match.estimatedCostMYR,
+    priceRangeMYR: [match.priceMinMYR, match.priceMaxMYR],
+    wholeRangeWithinBudget: match.withinBudget,
     halal: match.isHalal,
     rating: match.rating ?? null,
     distanceMeters: match.distanceMeters ?? null,
@@ -299,14 +317,17 @@ async function rankWithGemini(
 
   const prompt = `
 You pick where a Universiti Malaya student should eat. Every venue below already fits their budget,
-diet requirements and distance, so judge them only on the craving, distance, rating and price.
+diet requirements and distance, so judge them only on the craving, distance, rating and price range.
 
 Student:
 - Location: somewhere on the Universiti Malaya campus; distances are from the campus centre
 - Craving: ${craving || "anything (no preference)"}
+- Budget: RM${maxBudget} for one meal
 - Diet filters already applied in code (every venue below meets them): ${dietaryRestrictions.join(", ") || "none"}
 
 Rules:
+- "priceRangeMYR" is [cheapest, dearest] usual meal. Every venue's cheapest meal fits the budget. Prefer venues
+  with "wholeRangeWithinBudget" true (the student can order freely), and between similar venues the lower typical price.
 - If there is a craving, only include venues that plausibly serve it (use "serves", "cuisine", "description", "menuHints", "tags" and the name;
   Malaysian terms count, e.g. mee/kuey teow/laksa are noodles, nasi is rice, "mcd" means McDonald's).
 - "recommendations": the best 3 (fewer if fewer fit), best first. "reasoning" is one short sentence (under 25 words)
@@ -421,12 +442,15 @@ export async function POST(req: NextRequest) {
     const knownPlaceIds = new Set(venues.map((v) => v.placeId).filter(Boolean));
     venues = [...venues, ...OFF_CAMPUS_DRIVING_HOTSPOTS.filter((v) => !knownPlaceIds.has(v.placeId))];
 
-    // 2. Drop venues that can't work: over budget, miss a ticked diet filter, or too far.
+    // 2. Drop venues that can't work: no price, cheapest meal over budget, miss a ticked diet filter, or too far.
     // Venues with no coordinates are the hand-seeded on-campus ones, so the distance filter keeps them.
     const candidates: Candidate[] = venues
-      .map((venue) => ({ venue, match: toVenueMatch(venue) }))
-      .filter(({ venue, match }) => {
-        if (!(venue.avgPriceMYR <= maxBudget)) return false;
+      .flatMap((venue) => {
+        const price = venuePriceRange(venue);
+        return price ? [{ venue, price, match: toVenueMatch(venue, price, maxBudget) }] : [];
+      })
+      .filter(({ venue, price, match }) => {
+        if (!fitsBudget(price, maxBudget)) return false;
         if (!meetsDiet(venue, dietaryRestrictions)) return false;
         return maxDistanceKm === null || match.distanceMeters === undefined || match.distanceMeters <= maxDistanceKm * 1000;
       });
@@ -459,7 +483,7 @@ export async function POST(req: NextRequest) {
           (a, b) => Number(matchesCraving(b)) - Number(matchesCraving(a)) || rankByDistanceAndRating(a, b),
         );
         const overflow = ordered.slice(GEMINI_CANDIDATE_CAP).filter(matchesCraving);
-        const ranked = await rankWithGemini(apiKey, ordered.slice(0, GEMINI_CANDIDATE_CAP), craving, dietaryRestrictions);
+        const ranked = await rankWithGemini(apiKey, ordered.slice(0, GEMINI_CANDIDATE_CAP), craving, maxBudget, dietaryRestrictions);
         if (ranked.length > 0) return respond("gemini", [...ranked, ...overflow.map((candidate) => ({ candidate }))]);
         console.warn("Gemini returned no usable venues, using code-only fallback");
       } catch (err) {

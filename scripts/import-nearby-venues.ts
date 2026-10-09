@@ -19,6 +19,7 @@ import * as fs from "fs";
 import { collection, getDocs, doc, writeBatch } from "firebase/firestore";
 import type { Venue } from "../src/lib/types";
 import { UM_CAMPUS_CENTER, distanceMeters, type LatLng } from "../src/lib/geo";
+import type { PriceRange } from "../src/lib/price";
 import { connectFirestore, loadEnvLocal, runScript } from "./firestore";
 
 loadEnvLocal();
@@ -37,15 +38,15 @@ const FOOD_TYPES = ["restaurant", "cafe", "coffee_shop", "bakery", "fast_food_re
 const FOOD_PRIMARY_TYPE =
   /restaurant|cafe|cafeteria|coffee|bakery|food_court|meal_|diner|deli|tea_house|juice|dessert|ice_cream|donut|bagel|sandwich|snack|bistro|buffet/;
 
-// Google gives a price level, not ringgit. Rough per-person MYR for a student meal.
-const PRICE_LEVEL_MYR: Record<string, number> = {
-  PRICE_LEVEL_FREE: 0,
-  PRICE_LEVEL_INEXPENSIVE: 8,
-  PRICE_LEVEL_MODERATE: 15,
-  PRICE_LEVEL_EXPENSIVE: 30,
-  PRICE_LEVEL_VERY_EXPENSIVE: 60,
+// Google gives a price level, not ringgit. Rough per-person MYR range for a student meal.
+const PRICE_LEVEL_MYR: Record<string, PriceRange> = {
+  PRICE_LEVEL_FREE: { min: 0, max: 0 },
+  PRICE_LEVEL_INEXPENSIVE: { min: 6, max: 12 },
+  PRICE_LEVEL_MODERATE: { min: 12, max: 25 },
+  PRICE_LEVEL_EXPENSIVE: { min: 25, max: 45 },
+  PRICE_LEVEL_VERY_EXPENSIVE: { min: 45, max: 80 },
 };
-const DEFAULT_PRICE_MYR = 12;
+const DEFAULT_PRICE_MYR: PriceRange = { min: 8, max: 15 };
 // Places removed from Firestore by hand, so re-runs don't add them back.
 const EXCLUDED_PLACE_IDS = new Set([
   "ChIJ00x1dABJzDERF_SXoN9OfTU", // "UM": not a food place
@@ -144,10 +145,10 @@ function similarNames(a: string, b: string) {
   return na === nb || (na.length >= 3 && nb.length >= 3 && (na.includes(nb) || nb.includes(na)));
 }
 
-function estimatePriceMYR(place: GooglePlace) {
+function estimatePriceMYR(place: GooglePlace): PriceRange {
   const start = Number(place.priceRange?.startPrice?.units);
   const end = Number(place.priceRange?.endPrice?.units ?? start);
-  if (Number.isFinite(start) && start > 0) return Math.round(((start + (end || start)) / 2) * 100) / 100;
+  if (Number.isFinite(start) && start > 0) return { min: start, max: Number.isFinite(end) && end > start ? end : start };
   return PRICE_LEVEL_MYR[place.priceLevel ?? ""] ?? DEFAULT_PRICE_MYR;
 }
 
@@ -180,19 +181,20 @@ function toVenue(place: GooglePlace): ImportedVenue | null {
   if (EXCLUDED_PLACE_IDS.has(place.id)) return null;
   if (place.primaryType && !FOOD_PRIMARY_TYPE.test(place.primaryType)) return null;
 
-  const avgPriceMYR = estimatePriceMYR(place);
+  const price = estimatePriceMYR(place);
   const dietaryTags = buildTags(place, name);
   return {
     placeId: place.id,
     name,
     location: place.formattedAddress ?? name,
-    avgPriceMYR,
+    priceMinMYR: price.min,
+    priceMaxMYR: price.max,
     // Left unset (not checked) unless Google lists it as a halal restaurant; confirm in the venues sheet
     isHalal: place.types?.includes("halal_restaurant") ? true : undefined,
     // Google only says the menu has some veg dishes, so this is a reference, not the vegetarian flag
     hasVegetarianOptions: place.servesVegetarianFood,
     dietaryTags,
-    menuItems: [{ itemName: "Typical meal", priceMYR: avgPriceMYR }], // /api/decide needs at least one item
+    menuItems: [{ itemName: "Typical meal", priceMYR: price.min }], // /api/decide needs at least one item
     description: place.editorialSummary?.text,
     cuisine: place.primaryTypeDisplayName?.text,
     openingHours: place.regularOpeningHours?.weekdayDescriptions,
@@ -408,7 +410,7 @@ async function main() {
 
   console.log(`\n${toAdd.length} new, ${toRefresh.length} already in Firestore (details refreshed), ${skipped.length} duplicate(s) skipped.`);
   for (const v of toAdd) {
-    console.log(`  + ${v.name} | ${v.cuisine ?? "?"} | RM${v.avgPriceMYR.toFixed(2)} | ${v.distanceMeters} m`);
+    console.log(`  + ${v.name} | ${v.cuisine ?? "?"} | RM${v.priceMinMYR}-${v.priceMaxMYR} | ${v.distanceMeters} m`);
   }
   for (const s of skipped) console.log(`  = ${s}`);
 

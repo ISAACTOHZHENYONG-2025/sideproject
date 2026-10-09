@@ -1,7 +1,7 @@
 import type { VenueMatch } from "@/app/api/decide/route";
 import MaterialIcon from "@/components/ui/MaterialIcon";
 import DietBadges from "./DietBadges";
-import { distanceLabel } from "./foodMatch";
+import { distanceLabel, priceLabel } from "./foodMatch";
 
 type MoreMatchesListProps = {
   matches: VenueMatch[];
@@ -20,7 +20,7 @@ export default function MoreMatchesList({ matches }: MoreMatchesListProps) {
                 <DietBadges isHalal={match.isHalal} isVegan={match.isVegan} isVegetarian={match.isVegetarian} />
               </div>
               <p className="text-[11px] text-on-surface-variant mt-0.5 tabular-nums">
-                <span className="font-bold text-primary">RM {match.estimatedCostMYR.toFixed(2)}</span>
+                <span className="font-bold text-primary">{priceLabel(match)}</span>
                 {distance ? ` · ${distance}` : ""}
               </p>
               {match.allergyNotes ? (
