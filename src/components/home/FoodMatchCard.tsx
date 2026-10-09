@@ -1,6 +1,7 @@
 import MaterialIcon from "@/components/ui/MaterialIcon";
 import DietBadges from "./DietBadges";
 import type { FoodMatch } from "./foodMatch";
+import VenuePhoto from "./VenuePhoto";
 
 type FoodMatchCardProps = {
   match: FoodMatch;
@@ -12,14 +13,7 @@ export default function FoodMatchCard({ match, insightLabel }: FoodMatchCardProp
 
   return (
     <article className="bg-surface rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden flex flex-col">
-      <div className="relative w-full h-36 bg-slate-100 border-b border-dashed border-slate-300 flex flex-col items-center justify-center group cursor-pointer hover:bg-slate-200/70 transition-colors">
-        <div className="flex flex-col items-center justify-center p-3 text-center">
-          <MaterialIcon
-            name="add_a_photo"
-            className="text-3xl text-slate-400 group-hover:scale-110 transition-transform"
-          />
-          <span className="text-[11px] font-medium text-slate-500 mt-1">Tap to upload stall photo</span>
-        </div>
+      <VenuePhoto foods={match.serves} name={match.title} preload={isTop}>
         {match.distanceShort ? (
           <div className="absolute top-2.5 left-2.5 flex items-center gap-1 bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-full shadow-sm text-[11px] font-bold text-slate-800 tabular-nums">
             <MaterialIcon name="location_on" className="text-[14px] text-primary" />
@@ -33,7 +27,7 @@ export default function FoodMatchCard({ match, insightLabel }: FoodMatchCardProp
         >
           #{match.rank} MATCH
         </div>
-      </div>
+      </VenuePhoto>
 
       <div className="p-3.5 flex flex-col gap-2.5">
         <div className="flex items-start justify-between gap-2">

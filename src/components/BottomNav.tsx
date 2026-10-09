@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { groupEnabled } from "@/lib/features";
 import MaterialIcon from "./ui/MaterialIcon";
 
 type Tab = "explore" | "group";
@@ -12,11 +13,12 @@ type BottomNavProps = {
   onAction?: () => void;
 };
 
-// Group mode is hidden for the MVP; set `enabled: true` to bring the tab back.
-// The nav bar only shows when more than one tab is enabled.
+// Group mode is hidden for the MVP; NEXT_PUBLIC_ENABLE_GROUP=true brings back the tab, the
+// /group page and the group API routes together. The nav bar only shows when more than one tab
+// is enabled.
 const TABS: { id: Tab; href: string; icon: string; label: string; enabled: boolean }[] = [
   { id: "explore", href: "/", icon: "explore", label: "Explore", enabled: true },
-  { id: "group", href: "/group", icon: "groups", label: "Group", enabled: false },
+  { id: "group", href: "/group", icon: "groups", label: "Group", enabled: groupEnabled },
 ];
 
 export default function BottomNav({

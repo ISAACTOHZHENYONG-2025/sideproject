@@ -44,7 +44,13 @@ try {
   process.exit(2);
 }
 
-for (const path of ["/", "/group", "/filter"]) await page(path);
+// Group mode is behind NEXT_PUBLIC_ENABLE_GROUP. With it off every group route 404s, so probe
+// a request that would answer 400 when the feature is on and skip the group checks if it doesn't.
+const groupProbe = await fetch(`${BASE}/api/group/members`);
+const groupEnabled = groupProbe.status !== 404;
+if (!groupEnabled) console.log("Group mode is off (NEXT_PUBLIC_ENABLE_GROUP) - skipping group checks.\n");
+
+for (const path of groupEnabled ? ["/", "/group", "/filter"] : ["/", "/filter"]) await page(path);
 
 // /api/decide
 const decideCases = [
@@ -80,52 +86,53 @@ for (const { label, ...payload } of decideCases) {
 }
 
 // /api/group/*
-const created = await post("/api/group/create", { hostName: "SmokeTest Host" });
-const roomCode = created.data.roomCode;
-report(
-  "POST /api/group/create",
-  created.status === 200 && /^UM-[A-Z0-9]{3}$/.test(roomCode ?? ""),
-  created.status === 200 ? roomCode : `status ${created.status}: ${created.data.error ?? ""}`,
-);
+if (groupEnabled) {
+  const created = await post("/api/group/create", { hostName: "SmokeTest Host" });
+  const roomCode = created.data.roomCode;
+  report(
+    "POST /api/group/create",
+    created.status === 200 && /^UM-[A-Z0-9]{3}$/.test(roomCode ?? ""),
+    created.status === 200 ? roomCode : `status ${created.status}: ${created.data.error ?? ""}`,
+  );
 
-if (roomCode) {
-  const empty = await post("/api/group/resolve", { roomCode });
-  report("POST /api/group/resolve (no members) -> 400", empty.status === 400, `status ${empty.status}`);
+  if (roomCode) {
+    const empty = await post("/api/group/resolve", { roomCode });
+    report("POST /api/group/resolve (no members) -> 400", empty.status === 400, `status ${empty.status}`);
 
-  const members = [
-    { memberName: "Alex", maxBudget: 10, availableTimeMins: 30, transportMode: "walk_or_public", dietaryRestrictions: ["Halal"] },
-    { memberName: "Sarah", maxBudget: 20, availableTimeMins: 45, transportMode: "private_vehicle", dietaryRestrictions: [] },
-  ];
-  for (const m of members) {
-    const joined = await post("/api/group/join", { roomCode, ...m });
-    report(`POST /api/group/join (${m.memberName})`, joined.status === 200 && joined.data.success === true, `status ${joined.status}`);
+    const members = [
+      { memberName: "Alex", maxBudget: 10, availableTimeMins: 30, transportMode: "walk_or_public", dietaryRestrictions: ["Halal"] },
+      { memberName: "Sarah", maxBudget: 20, availableTimeMins: 45, transportMode: "private_vehicle", dietaryRestrictions: [] },
+    ];
+    for (const m of members) {
+      const joined = await post("/api/group/join", { roomCode, ...m });
+      report(`POST /api/group/join (${m.memberName})`, joined.status === 200 && joined.data.success === true, `status ${joined.status}`);
+    }
+
+    try {
+      const res = await fetch(`${BASE}/api/group/members?roomCode=${roomCode}`);
+      const room = await res.json();
+      const names = (room.participants ?? []).map((p) => p.memberName).join(", ");
+      report("GET /api/group/members (2 members)", res.status === 200 && room.participants?.length === 2, names);
+    } catch (err) {
+      report("GET /api/group/members", false, err.message);
+    }
+
+    const resolved = await post("/api/group/resolve", { roomCode });
+    report("POST /api/group/resolve (2 members)", resolved.status === 200, `status ${resolved.status}: ${resolved.data.error ?? ""}`);
+    if (resolved.status === 200) console.log("  response keys:", Object.keys(resolved.data).join(", "));
   }
 
-  try {
-    const res = await fetch(`${BASE}/api/group/members?roomCode=${roomCode}`);
-    const room = await res.json();
-    const names = (room.participants ?? []).map((p) => p.memberName).join(", ");
-    report("GET /api/group/members (2 members)", res.status === 200 && room.participants?.length === 2, names);
-  } catch (err) {
-    report("GET /api/group/members", false, err.message);
-  }
-
-  const resolved = await post("/api/group/resolve", { roomCode });
-  report("POST /api/group/resolve (2 members)", resolved.status === 200, `status ${resolved.status}: ${resolved.data.error ?? ""}`);
-  if (resolved.status === 200) console.log("  response keys:", Object.keys(resolved.data).join(", "));
+  // error cases
+  const unknownRoom = await fetch(`${BASE}/api/group/members?roomCode=UM-ZZZ`);
+  report("GET /api/group/members (unknown room) -> 404", unknownRoom.status === 404, `status ${unknownRoom.status}`);
+  report("GET /api/group/members (no roomCode) -> 400", groupProbe.status === 400, `status ${groupProbe.status}`);
+  const noCode = await post("/api/group/join", { memberName: "X" });
+  report("POST /api/group/join (no roomCode) -> 400", noCode.status === 400, `status ${noCode.status}`);
+  const badCode = await post("/api/group/join", { roomCode: "UM-ZZZ" });
+  report("POST /api/group/join (unknown room) -> 404", badCode.status === 404, `status ${badCode.status}`);
+  const badResolve = await post("/api/group/resolve", {});
+  report("POST /api/group/resolve (no roomCode) -> 400", badResolve.status === 400, `status ${badResolve.status}`);
 }
-
-// error cases
-const noMembersCode = await fetch(`${BASE}/api/group/members`);
-report("GET /api/group/members (no roomCode) -> 400", noMembersCode.status === 400, `status ${noMembersCode.status}`);
-const unknownRoom = await fetch(`${BASE}/api/group/members?roomCode=UM-ZZZ`);
-report("GET /api/group/members (unknown room) -> 404", unknownRoom.status === 404, `status ${unknownRoom.status}`);
-const noCode = await post("/api/group/join", { memberName: "X" });
-report("POST /api/group/join (no roomCode) -> 400", noCode.status === 400, `status ${noCode.status}`);
-const badCode = await post("/api/group/join", { roomCode: "UM-ZZZ" });
-report("POST /api/group/join (unknown room) -> 404", badCode.status === 404, `status ${badCode.status}`);
-const badResolve = await post("/api/group/resolve", {});
-report("POST /api/group/resolve (no roomCode) -> 400", badResolve.status === 400, `status ${badResolve.status}`);
 
 console.log(failed === 0 ? "\nAll checks passed." : `\n${failed} check(s) failed.`);
 process.exit(failed === 0 ? 0 : 1);

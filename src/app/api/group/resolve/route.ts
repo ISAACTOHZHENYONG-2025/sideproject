@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { requireGroupEnabled } from "@/lib/features";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
 import { mapsUrlForVenueName } from "@/lib/maps";
@@ -49,6 +50,8 @@ function withMapsUrls(result: GroupResolveResponse, venues: Venue[]): GroupResol
 }
 
 export async function POST(req: NextRequest) {
+  // Outside the try: this 404s by throwing, which the catch below would turn into a 500.
+  requireGroupEnabled();
   try {
     if (!db) {
       return NextResponse.json(

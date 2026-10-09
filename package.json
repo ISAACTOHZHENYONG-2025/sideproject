@@ -10,7 +10,8 @@
     "db:cli": "npx tsx scripts/db-cli.ts",
     "db:import-nearby": "npx tsx scripts/import-nearby-venues.ts",
     "db:export-sheet": "npx tsx scripts/export-venues-sheet.ts",
-    "db:import-sheet": "npx tsx scripts/import-venues-sheet.ts"
+    "db:import-sheet": "npx tsx scripts/import-venues-sheet.ts",
+    "venues:photos": "npx tsx scripts/venue-photo-list.ts"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",

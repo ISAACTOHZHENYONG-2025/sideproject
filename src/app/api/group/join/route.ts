@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collection, query, where, getDocs, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { requireGroupEnabled } from "@/lib/features";
 
 export interface JoinMemberPayload {
   roomCode: string;
@@ -12,6 +13,8 @@ export interface JoinMemberPayload {
 }
 
 export async function POST(req: NextRequest) {
+  // Outside the try: this 404s by throwing, which the catch below would turn into a 500.
+  requireGroupEnabled();
   try {
     if (!db) {
       return NextResponse.json(

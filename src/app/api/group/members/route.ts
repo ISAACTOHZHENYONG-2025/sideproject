@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { requireGroupEnabled } from "@/lib/features";
 import type { Participant } from "../resolve/route";
 
 export type RoomMember = Participant & { joinedAt: string };
@@ -13,6 +14,8 @@ export interface RoomInfo {
 }
 
 export async function GET(req: NextRequest) {
+  // Outside the try: this 404s by throwing, which the catch below would turn into a 500.
+  requireGroupEnabled();
   try {
     if (!db) {
       return NextResponse.json(
