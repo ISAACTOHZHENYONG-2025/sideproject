@@ -6,6 +6,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
 import { mapsUrlForVenueName } from "@/lib/maps";
 import { meetsDiet } from "@/lib/diet";
+import { budgetComfort, fitsBudget, midpoint, venuePriceRange } from "@/lib/price";
 
 export interface Participant {
   memberName: string;
@@ -139,7 +140,8 @@ export async function POST(req: NextRequest) {
         {
           name: "KK12 Dining Hall (Raja Dr. Nazrin Shah)",
           location: "12th Residential College, Universiti Malaya (Shuttle Bus Stop)",
-          avgPriceMYR: 8.5,
+          priceMinMYR: 6,
+          priceMaxMYR: 10,
           isHalal: true,
           dietaryTags: ["Halal", "Budget-Friendly", "Nasi Campur"],
           menuItems: [
@@ -151,7 +153,8 @@ export async function POST(req: NextRequest) {
         {
           name: "Perdanasiswa Complex (KPS) Central Canteen",
           location: "Kompleks Perdanasiswa (Central Hub)",
-          avgPriceMYR: 9.0,
+          priceMinMYR: 7,
+          priceMaxMYR: 12,
           isHalal: true,
           dietaryTags: ["Halal", "Economy Rice", "Student Union"],
           menuItems: [
@@ -162,7 +165,8 @@ export async function POST(req: NextRequest) {
         {
           name: "Faculty of Science Food Court (FOS Bistro)",
           location: "Faculty of Science, near Department of Chemistry",
-          avgPriceMYR: 11.0,
+          priceMinMYR: 8,
+          priceMaxMYR: 14,
           isHalal: true,
           dietaryTags: ["Halal", "Western", "Noodles"],
           menuItems: [
@@ -218,7 +222,9 @@ ${JSON.stringify(dietVenues, null, 2)}
 DECISION RULES:
 1. Select 1 "winningRecommendation" that satisfies the lowest budget, strictest time, transport limitation, and all dietary restrictions.
 2. Select 1 to 2 "backupOptions" as second-best alternatives.
-3. In "consensusReasoning", write an explicit, helpful human breakdown explaining how it accommodates everyone (e.g., "Fits Student A's RM${strictBudgetCap} budget, satisfies Student B's Halal requirement, and is accessible without a car for Student C.").
+3. "priceMinMYR"-"priceMaxMYR" is a venue's usual meal price range. A venue fits the budget when priceMinMYR is within the cap;
+   prefer venues whose priceMaxMYR is within it too. "totalCostPerPersonMYR" must not exceed the cap.
+4. In "consensusReasoning", write an explicit, helpful human breakdown explaining how it accommodates everyone (e.g., "Fits Student A's RM${strictBudgetCap} budget, satisfies Student B's Halal requirement, and is accessible without a car for Student C.").
 
 Provide your response adhering strictly to the structured schema.
 `;
@@ -282,11 +288,24 @@ Provide your response adhering strictly to the structured schema.
       return NextResponse.json(withMapsUrls(parsed, candidateVenues), { status: 200 });
     }
 
-    // Heuristic Fallback Engine
-    const validCandidates = dietVenues.filter((v) => {
-      const cheapItem = v.menuItems?.find((m) => m.priceMYR <= strictBudgetCap);
-      return Boolean(cheapItem);
-    });
+    // Heuristic Fallback Engine: venues whose price range overlaps the lowest budget, those fully within it
+    // first, then the lowest typical (midpoint) price.
+    const validCandidates = dietVenues
+      .flatMap((v) => {
+        const price = venuePriceRange(v);
+        return price && fitsBudget(price, strictBudgetCap) ? [{ v, price }] : [];
+      })
+      .sort(
+        (a, b) =>
+          budgetComfort(a.price, strictBudgetCap) - budgetComfort(b.price, strictBudgetCap) ||
+          midpoint(a.price) - midpoint(b.price),
+      )
+      .map(({ v }) => v);
+    // Typical cost per person: the venue's midpoint price, capped at the budget
+    const costFor = (v: Venue) => {
+      const price = venuePriceRange(v);
+      return price ? Math.min(midpoint(price), strictBudgetCap) : strictBudgetCap;
+    };
 
     const winnerVenue = validCandidates[0] || dietVenues[0];
     const suitableItems = (winnerVenue?.menuItems || [])
@@ -305,7 +324,7 @@ Provide your response adhering strictly to the structured schema.
       winningRecommendation: {
         venueName: winnerVenue.name,
         recommendedItems: winnerItems.slice(0, 3),
-        totalCostPerPersonMYR: Math.min(winnerVenue.avgPriceMYR || strictBudgetCap, strictBudgetCap),
+        totalCostPerPersonMYR: costFor(winnerVenue),
         consensusReasoning: `Accommodates ${participants.length} students (${participantNames}) under lowest budget cap RM${strictBudgetCap.toFixed(
           2
         )}, matches ${transportBottleneck === "walk_or_public" ? "walking/campus shuttle limitation" : "vehicle access"}, and fulfills dietary preferences (${mergedDietaryRestrictions.join(", ") || "standard"}).`,
@@ -314,7 +333,7 @@ Provide your response adhering strictly to the structured schema.
         {
           venueName: backupVenue.name,
           recommendedItems: backupItems.slice(0, 2),
-          totalCostPerPersonMYR: Math.min(backupVenue.avgPriceMYR || strictBudgetCap, strictBudgetCap),
+          totalCostPerPersonMYR: costFor(backupVenue),
           consensusReasoning: `Strong alternative fitting within ${strictTimeLimit} mins and group budget.`,
         },
       ],

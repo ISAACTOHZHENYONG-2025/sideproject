@@ -1,12 +1,14 @@
-// Reads venues.csv (from db:export-sheet) and updates each venue's halal, diet flags, price, food types and allergy notes by id.
+// Reads venues.csv (from db:export-sheet) and updates each venue's halal, diet flags, price range, food types and allergy notes by id.
+// priceMYR holds a range like "12-25"; a single "15" sets min and max to 15.
 //   npm run db:import-sheet -- --dry-run   # show what would change, write nothing
 //   npm run db:import-sheet                # write the changes to Firestore
 //   npm run db:import-sheet -- --file=my-venues.csv
 // Blank cells leave that field as it is. Rows with bad values are skipped.
 
 import * as fs from "fs";
-import { collection, doc, getDocs, writeBatch } from "firebase/firestore";
+import { collection, deleteField, doc, getDocs, writeBatch, type FieldValue } from "firebase/firestore";
 import type { Venue } from "../src/lib/types";
+import { formatPriceRange, parsePriceRange, venuePriceRange } from "../src/lib/price";
 import { parseCsv } from "./csv";
 import { connectFirestore, runScript } from "./firestore";
 
@@ -14,8 +16,11 @@ const MAX_PRICE_MYR = 200;
 const PLACEHOLDER_MENU_ITEM = "Typical meal";
 
 type Update = Partial<
-  Pick<Venue, "isHalal" | "vegetarian" | "vegan" | "noSeafoodOption" | "allergyNotes" | "avgPriceMYR" | "serves" | "menuItems">
->;
+  Pick<
+    Venue,
+    "isHalal" | "vegetarian" | "vegan" | "noSeafoodOption" | "allergyNotes" | "priceMinMYR" | "priceMaxMYR" | "serves" | "menuItems"
+  >
+> & { avgPriceMYR?: FieldValue };
 
 const MAX_NOTE_LENGTH = 200;
 
@@ -31,16 +36,6 @@ function parseNote(value: string): string | undefined | Error {
   const note = value.trim().replace(/\s+/g, " ");
   if (note.length > MAX_NOTE_LENGTH) return new Error(`allergyNotes is over ${MAX_NOTE_LENGTH} characters`);
   return note || undefined;
-}
-
-function parsePrice(value: string): number | undefined | Error {
-  const v = value.trim().replace(/^rm\s*/i, "");
-  if (!v) return undefined;
-  const price = Number(v);
-  if (!Number.isFinite(price) || price <= 0 || price > MAX_PRICE_MYR) {
-    return new Error(`priceMYR must be a number between 0 and ${MAX_PRICE_MYR}, got "${value}"`);
-  }
-  return Math.round(price * 100) / 100;
 }
 
 function parseServes(value: string): string[] | undefined {
@@ -96,7 +91,7 @@ runScript(async () => {
     const vegan = parseYesNo("vegan", cell("vegan"));
     const noSeafood = parseYesNo("noSeafood", cell("noseafood"));
     const note = parseNote(cell("allergynotes"));
-    const price = parsePrice(cell("pricemyr"));
+    const price = parsePriceRange(cell("pricemyr"), MAX_PRICE_MYR);
     const problems = [halal, vegetarian, vegan, noSeafood, note, price].filter((v): v is Error => v instanceof Error);
     if (problems.length > 0) {
       console.log(`SKIP  ${label}: ${problems.map((p) => p.message).join("; ")}`);
@@ -129,12 +124,16 @@ runScript(async () => {
       data.allergyNotes = note;
       changes.push(`allergyNotes "${venue.allergyNotes ?? ""}" -> "${note}"`);
     }
-    if (typeof price === "number" && price !== venue.avgPriceMYR) {
-      data.avgPriceMYR = price;
-      changes.push(`price RM${venue.avgPriceMYR} -> RM${price}`);
-      // Imported venues carry one placeholder menu item at the average price; keep it in step.
+    if (price && !(price instanceof Error) && (price.min !== venue.priceMinMYR || price.max !== venue.priceMaxMYR || venue.avgPriceMYR !== undefined)) {
+      data.priceMinMYR = price.min;
+      data.priceMaxMYR = price.max;
+      // The old single price is replaced by the range
+      if (venue.avgPriceMYR !== undefined) data.avgPriceMYR = deleteField();
+      const was = venuePriceRange(venue);
+      changes.push(`price ${was ? `RM${formatPriceRange(was)}` : "blank"} -> RM${formatPriceRange(price)}`);
+      // Imported venues carry one placeholder menu item; keep it at the cheapest usual meal.
       if (venue.menuItems?.length === 1 && venue.menuItems[0].itemName === PLACEHOLDER_MENU_ITEM) {
-        data.menuItems = [{ itemName: PLACEHOLDER_MENU_ITEM, priceMYR: price }];
+        data.menuItems = [{ itemName: PLACEHOLDER_MENU_ITEM, priceMYR: price.min }];
       }
     }
     if (serves && !sameList(serves, venue.serves)) {

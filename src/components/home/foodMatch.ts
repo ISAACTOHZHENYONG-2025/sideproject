@@ -1,12 +1,16 @@
 import type { RecommendationItem, VenueMatch } from "@/app/api/decide/route";
 import { formatDistance } from "@/lib/geo";
+import { formatPriceRange } from "@/lib/price";
 
 export type FoodMatch = {
   id: string;
   rank: number;
   title: string;
+  // e.g. "RM12-25"
   price: string;
   priceNote: string;
+  // False when only the cheaper end of the range fits the budget
+  priceWithinBudget: boolean;
   isHalal: boolean;
   isVegetarian: boolean;
   isVegan: boolean;
@@ -26,13 +30,18 @@ export function distanceLabel(match: VenueMatch) {
     : `${formatDistance(match.distanceMeters)} from campus centre`;
 }
 
+export function priceLabel(match: VenueMatch) {
+  return `RM${formatPriceRange({ min: match.priceMinMYR, max: match.priceMaxMYR })}`;
+}
+
 export function fromRecommendation(rec: RecommendationItem, index: number, budget: number): FoodMatch {
   return {
     id: `${index}-${rec.venueName}`,
     rank: index + 1,
     title: rec.venueName,
-    price: `RM ${rec.estimatedCostMYR.toFixed(2)}`,
-    priceNote: `Under RM${budget}`,
+    price: priceLabel(rec),
+    priceNote: rec.withinBudget ? `Under RM${budget}` : `Some over RM${budget}`,
+    priceWithinBudget: rec.withinBudget,
     isHalal: rec.isHalal,
     isVegetarian: rec.isVegetarian,
     isVegan: rec.isVegan,

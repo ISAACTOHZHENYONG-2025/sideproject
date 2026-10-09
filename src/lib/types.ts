@@ -7,7 +7,11 @@ export interface Venue {
   id?: string;
   name: string;
   location: string;
-  avgPriceMYR: number;
+  // Usual meal price range in MYR, from the venues sheet's priceMYR column ("12-25"). Equal for a single price.
+  priceMinMYR?: number;
+  priceMaxMYR?: number;
+  // Old single price, still on docs not re-imported since ranges arrived; read it through venuePriceRange().
+  avgPriceMYR?: number;
   // true: checked and halal (shows the HALAL badge). false: checked and not halal. Unset: not checked yet.
   isHalal?: boolean;
   // Diet and allergy info, filled in from the venues sheet. Unset means nobody has checked yet.

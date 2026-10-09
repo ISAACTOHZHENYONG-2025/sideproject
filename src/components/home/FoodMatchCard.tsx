@@ -45,7 +45,11 @@ export default function FoodMatchCard({ match, insightLabel }: FoodMatchCardProp
           </div>
           <div className="text-right shrink-0">
             <div className="text-[18px] font-black leading-none text-primary tabular-nums">{match.price}</div>
-            <span className="text-[10px] font-semibold px-1 py-0.5 rounded inline-block mt-0.5 text-emerald-700 bg-emerald-50 tabular-nums">
+            <span
+              className={`text-[10px] font-semibold px-1 py-0.5 rounded inline-block mt-0.5 tabular-nums ${
+                match.priceWithinBudget ? "text-emerald-700 bg-emerald-50" : "text-[#B78103] bg-[#FFF8E1]"
+              }`}
+            >
               {match.priceNote}
             </span>
           </div>
@@ -61,7 +65,7 @@ export default function FoodMatchCard({ match, insightLabel }: FoodMatchCardProp
                 <span className="text-[13px] font-bold text-on-surface truncate block capitalize">{match.serves}</span>
               </>
             ) : (
-              <span className="text-[11px] font-semibold text-slate-500">Typical meal price shown</span>
+              <span className="text-[11px] font-semibold text-slate-500">Typical meal price range shown</span>
             )}
           </div>
         </div>
