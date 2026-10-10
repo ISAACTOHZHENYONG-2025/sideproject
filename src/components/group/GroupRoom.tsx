@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import BottomNav from "../BottomNav";
+import BottomNav from "@/components/layout/BottomNav";
 import MaterialIcon from "@/components/ui/MaterialIcon";
-import { googleMapsUrl } from "@/lib/maps";
-import { getRoom, resolveRoom, type GroupResolveResponse, type RoomInfo } from "@/lib/api";
+import { googleMapsUrl } from "@/lib/mapsLinks";
+import { getRoom, resolveRoom, type GroupResolveResponse, type RoomInfo } from "@/lib/apiClient";
 import GroupEntry, { type GroupSession } from "./GroupEntry";
 
 const STORAGE_KEY = "makanapa:group-session";

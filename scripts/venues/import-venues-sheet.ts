@@ -8,11 +8,11 @@
 
 import * as fs from "fs";
 import { collection, deleteField, doc, getDocs, writeBatch, type FieldValue } from "firebase/firestore";
-import { normalizeVenueDiet } from "../src/lib/diet";
-import type { DietAnswer, HalalStatus, Venue } from "../src/lib/types";
-import { formatPriceRange, parsePriceRange, venuePriceRange } from "../src/lib/price";
-import { parseCsv } from "./csv";
-import { connectFirestore, runScript } from "./firestore";
+import { normalizeVenueDiet } from "../../src/lib/diet";
+import type { DietAnswer, HalalStatus, Venue } from "../../src/lib/types";
+import { formatPriceRange, parsePriceRange, venuePriceRange } from "../../src/lib/price";
+import { parseCsv } from "../lib/sheet-csv";
+import { connectFirestore, runScript } from "../lib/firestore";
 
 const MAX_PRICE_MYR = 200;
 const PLACEHOLDER_MENU_ITEM = "Typical meal";

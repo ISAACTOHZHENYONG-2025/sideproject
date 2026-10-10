@@ -210,7 +210,7 @@ The interface embraces a friendly, ergonomic `16px` (`rounded-lg` / `1rem`) corn
 ### Hybrid Filtering Strategy (Client-Side Instant vs. Server-Side AI)
 To balance zero-latency UI feedback with optimal API token usage and cost efficiency:
 1. **Instant Client-Side Filtering**: Toggling static boolean flags (e.g., `Walk/Bus` vs. `Vehicle` or `Halal`) immediately hides non-matching cached cards locally via React client state without triggering backend API calls.
-2. **Explicit AI Execution Trigger**: Major filter updates (e.g., budget range shift or time availability changes) mark current AI insights as stale. Clicking the sticky action CTA invokes the `/api/decide` Next.js endpoint to fetch fresh Gemini recommendations and reasoning.
+2. **Explicit AI Execution Trigger**: Major filter updates (e.g., budget range shift or time availability changes) mark current AI insights as stale. Clicking the sticky action CTA invokes the `/api/decide` Next.js endpoint. Results from code's own reading of the search text show immediately; the AI's reading of the search text (areas, dishes, brands, spelling fixes) then refines them. The AI only interprets the search text; code does all filtering and ranking.
 
 ## Components
 

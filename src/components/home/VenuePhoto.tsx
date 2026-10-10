@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useState, type ReactNode } from "react";
-import { isValidVenueId, tileGradient, venuePhotoPath } from "@/lib/venueImage";
+import { isValidVenueId, tileGradient, venuePhotoPath } from "@/lib/venuePhoto";
 import DevPhotoUpload from "./DevPhotoUpload";
 
 type VenuePhotoProps = {

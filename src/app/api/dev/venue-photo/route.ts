@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
-import { isValidVenueId, venuePhotoPath } from "@/lib/venueImage";
+import { isValidVenueId, venuePhotoPath } from "@/lib/venuePhoto";
 
 // Developer-only: saves the photo posted by a card's "Upload photo" button (shown only under `npm run dev`)
 // as public/venues/<venueId>.jpg. Every method answers 404 outside development, so a production server

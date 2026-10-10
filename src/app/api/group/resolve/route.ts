@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { requireGroupEnabled } from "@/lib/features";
+import { requireGroupEnabled } from "@/lib/featureFlags";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
-import { mapsUrlForVenueName } from "@/lib/maps";
+import { mapsUrlForVenueName } from "@/lib/mapsLinks";
 import { assessDiet, mergeGroupRestrictions, normalizeVenueDiet } from "@/lib/diet";
 import { budgetComfort, fitsBudget, midpoint, venuePriceRange } from "@/lib/price";
 

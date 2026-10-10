@@ -1,9 +1,5 @@
-import * as fs from "fs";
-import * as path from "path";
 import * as readline from "readline";
-import { initializeApp, getApps, getApp } from "firebase/app";
 import {
-  getFirestore,
   collection,
   getDocs,
   doc,
@@ -13,9 +9,10 @@ import {
   deleteField,
   type FieldValue,
 } from "firebase/firestore";
-import { normalizeVenueDiet } from "../src/lib/diet";
-import { formatPriceRange, parsePriceRange, venuePriceRange } from "../src/lib/price";
-import type { HalalStatus, Venue } from "../src/lib/types";
+import { normalizeVenueDiet } from "../../src/lib/diet";
+import { formatPriceRange, parsePriceRange, venuePriceRange } from "../../src/lib/price";
+import type { HalalStatus, Venue } from "../../src/lib/types";
+import { connectFirestore } from "../lib/firestore";
 
 const MAX_PRICE_MYR = 200;
 
@@ -25,42 +22,7 @@ function venuePriceFields(data: Record<string, unknown>) {
   return range ? { priceMinMYR: range.min, priceMaxMYR: range.max } : {};
 }
 
-// Read .env.local manually so CLI works directly without external packages
-function loadEnvLocal() {
-  const envPath = path.resolve(process.cwd(), ".env.local");
-  if (!fs.existsSync(envPath)) return;
-
-  const content = fs.readFileSync(envPath, "utf-8");
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eqIdx = trimmed.indexOf("=");
-    if (eqIdx !== -1) {
-      const key = trimmed.slice(0, eqIdx).trim();
-      const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, "");
-      process.env[key] = val;
-    }
-  }
-}
-
-loadEnvLocal();
-
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
-
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-  console.error("❌ Error: Missing Firebase credentials in .env.local.");
-  process.exit(1);
-}
-
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const db = connectFirestore();
 
 const rl = readline.createInterface({
   input: process.stdin,

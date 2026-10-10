@@ -23,13 +23,18 @@ All of these go in `.env.local`, which is gitignored.
 | Variable | Used for |
 | --- | --- |
 | `NEXT_PUBLIC_FIREBASE_API_KEY`, `_AUTH_DOMAIN`, `_PROJECT_ID`, `_STORAGE_BUCKET`, `_MESSAGING_SENDER_ID`, `_APP_ID` | Firestore, which holds the `venues` collection (and group rooms). |
-| `GEMINI_API_KEY` | Ranking matches and writing the reasons in `/api/decide`. Server-side only. |
+| `GROQ_API_KEY` | Reading the search box into keywords in `/api/decide` (spelling fixes, synonyms, areas). Server-side only. `GROQ_MODEL` optionally overrides the model (default `qwen/qwen3.8-27b`). |
+| `GEMINI_API_KEY` | Group mode only (`/api/group/resolve`). Server-side only. |
 | `GOOGLE_MAPS_API_KEY` | `npm run db:import-nearby` only. Needs Places API (New) enabled. |
 | `NEXT_PUBLIC_ENABLE_GROUP` | Turns group mode on. See [Feature flags](#feature-flags). |
 
-The app still works without `GEMINI_API_KEY`. `/api/decide` falls back to code-only matching
-(the craving checked against each venue's foods, name, tags and menu) and reports
-`engine: "fallback"`. It does the same when Gemini fails or returns nothing usable.
+The app still works without `GROQ_API_KEY`. `/api/decide` then reads the search box in code (commas
+split it, known area names and a few food aliases are recognised) and reports `engine: "fallback"`.
+It does the same when Groq fails, takes over 4 s or returns nothing usable.
+
+Groq's free tier allows 8,000 tokens a minute and 1,000 requests a day. Each new search text costs one
+request of about 800 tokens, so roughly 10 new searches a minute; repeated ones come from a one-day cache.
+After a 429, `/api/decide` stops calling Groq until its `retry-after` passes and uses code's reading meanwhile.
 
 ## How it works
 
@@ -38,20 +43,29 @@ The app still works without `GEMINI_API_KEY`. `/api/decide` falls back to code-o
   filter the cached cards on the client right away. Budget and distance changes mark the results
   stale until the user asks for an update. Halal and Non-halal can be picked one, both or neither
   (both or neither means no halal preference).
-- **`POST /api/decide`**: loads venues from Firestore plus a few hard-coded off-campus spots, filters
-  them by budget, diet and straight-line distance from the UM campus centre, then asks Gemini to rank
-  the candidates and explain each pick. A venue known to break a ticked diet filter is dropped. A venue
-  nobody has checked (`unknown`) is kept, but only under See more with an "unconfirmed" label, after the
-  confirmed ones; the top 3 are always confirmed.
+- **`POST /api/decide`**: loads venues from Firestore plus a few hard-coded off-campus spots and reads
+  the search box ("sec17, chinese, rice", "zus", "bakuteh") into areas and food groups. Groq does that
+  reading (cached per search text for a day); it never sees venues, prices or diet data. Code then filters
+  by budget, diet, straight-line distance from the UM campus centre (skipped when the search names an
+  area), the named area, and the food groups, matched against each venue's name, cuisine, serves, tags
+  and menu. Venues matching more of the food groups rank first, then nearest, within budget, best rated
+  and cheapest. A venue known to break a ticked diet filter is dropped. A venue nobody has checked
+  (`unknown`) is kept, but only under See more with an "unconfirmed" label, after the confirmed ones; the
+  top 3 are always confirmed. The page asks once with `skipAi` for instant results, then again for
+  Groq's reading when there is a search text.
 
 Code layout:
 
 ```
-src/app/            pages and API routes
-src/components/     home feed, filter sheet, group room, bottom nav
-src/lib/            shared logic: diet rules, filters, geo, maps links, Firebase, venue images
-scripts/            venue data tools and the smoke test
-public/venues/      venue photos
+src/app/                  pages and API routes
+src/components/           home/ (feed, filter sheet), group/ (group room), layout/ (bottom nav), ui/ (icons)
+src/lib/                  shared logic: diet rules, filters, geo, maps links, Firebase, API client, venue photos
+scripts/venues/           venue data tools (Places import, sheet export/import, terminal editor, photo list)
+scripts/lib/              helpers shared by those scripts (Firestore connection, CSV)
+scripts/smoke-test.mjs    end-to-end check of every page and API route
+public/venues/            venue photos
+data/places-cache/        raw Google Places results per area (gitignored)
+venues.csv                the venue sheet written by db:export-sheet (gitignored)
 ```
 
 The UI follows the design system in [DESIGN.md](DESIGN.md).

@@ -9,9 +9,9 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { parseCsv } from "./csv";
+import { parseCsv } from "../lib/sheet-csv";
 
-const ROOT = path.join(import.meta.dirname, "..");
+const ROOT = path.join(import.meta.dirname, "..", "..");
 const PHOTO_DIR = path.join(ROOT, "public", "venues");
 
 async function main() {

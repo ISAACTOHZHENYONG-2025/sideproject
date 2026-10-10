@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { requireGroupEnabled } from "@/lib/features";
+import { requireGroupEnabled } from "@/lib/featureFlags";
 import type { Participant } from "../resolve/route";
 
 export type RoomMember = Participant & { joinedAt: string };

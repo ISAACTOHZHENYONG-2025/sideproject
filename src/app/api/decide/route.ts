@@ -1,21 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
-import { googleMapsUrl } from "@/lib/maps";
-import { assessDiet, effectiveRestrictions, normalizeVenueDiet, type DietFields } from "@/lib/diet";
+import { googleMapsUrl } from "@/lib/mapsLinks";
+import { assessDiet, normalizeVenueDiet, type DietFields } from "@/lib/diet";
 import { UM_CAMPUS_CENTER, distanceMeters, formatDistance } from "@/lib/geo";
 import { venueArea } from "@/lib/area";
+import {
+  EMPTY_QUERY,
+  compileQuery,
+  fold,
+  parseQueryLocally,
+  sanitiseQuery,
+  splitPhrases,
+  venueSearchText,
+  type SearchQuery,
+} from "@/lib/search";
 import { budgetComfort, fitsBudget, formatPriceRange, midpoint, venuePriceRange, type PriceRange } from "@/lib/price";
 
 export interface DecideRequestPayload {
-  // Free text such as "noodles" or "mcd"; empty means anything.
+  // Free text, one or several things: "noodles", "zus", "sec17, chinese, rice". Empty means anything.
   craving?: string;
   maxBudget: number;
   // Straight-line distance from the UM campus centre; null means any distance.
   maxDistanceKm?: number | null;
   dietaryRestrictions: string[];
+  // True reads the craving without the AI (unless its reading is cached), so the page can show results straight away.
+  skipAi?: boolean;
 }
 
 // A venue that fits the student's budget, diet and distance.
@@ -52,7 +63,10 @@ export interface RecommendationItem extends VenueMatch {
 export interface DecideResponseData {
   recommendations: RecommendationItem[];
   moreMatches: VenueMatch[];
-  engine: "gemini" | "fallback";
+  // "ai" when the AI read the craving into the query; "fallback" when code did
+  engine: "ai" | "fallback";
+  // How the craving was read, for showing back to the student
+  query: SearchQuery;
 }
 
 // Off-campus spots, included whenever they are within the chosen distance. Coordinates are from Google Places.
@@ -155,27 +169,41 @@ const UNKNOWN_DISTANCE_M = 800;
 const DEFAULT_MAX_DISTANCE_KM = 3;
 // Ranking treats venues within the same 300 m band as equally near.
 const DISTANCE_BAND_M = 300;
-// Most venues sent to Gemini in one request; keeps searches fast and cheap as the venue list grows.
-const GEMINI_CANDIDATE_CAP = 40;
 const VENUE_CACHE_MS = 60_000;
-const PLACEHOLDER_MENU_ITEM = "Typical meal";
+// Room for several things at once, e.g. "sec17, chinese, rice"
+const MAX_CRAVING_CHARS = 100;
+// The AI's reading of a craving is kept this long; the same words mean the same thing tomorrow
+const QUERY_CACHE_MS = 24 * 60 * 60_000;
+const QUERY_CACHE_MAX = 200;
+// Most serves values listed in the AI prompt, most common first. 50 keeps the prompt near 700 tokens (Groq's free
+// tier allows 8,000 a minute) and read cravings about as well as 150 in testing.
+const PROMPT_SERVES_CAP = 50;
+// Back-off after a 429 when Groq doesn't send retry-after
+const DEFAULT_AI_PAUSE_S = 10;
+// A slower AI call is abandoned and code's reading is kept. The page already shows code's results by then, so
+// waiting longer only delays the refinement. Groq answers in 0.3-0.8 s.
+const AI_TIMEOUT_MS = 4_000;
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+// Override with GROQ_MODEL in .env.local. Qwen split and spelled cravings best of the models tried.
+const DEFAULT_GROQ_MODEL = "qwen/qwen3.8-27b";
 
-// What students type → words that show up in venue names, serves, tags and menus.
-const CRAVING_ALIASES: Record<string, string[]> = {
-  noodle: ["mee", "mi", "kuey teow", "koay teow", "laksa", "ramen", "pho", "bihun", "maggi", "indomie", "pasta", "yee mee"],
-  rice: ["nasi", "biryani", "briyani", "economy rice", "chicken rice"],
-  "fast food": ["burger", "fried chicken", "mcdonald", "kfc", "pizza", "fast food restaurant"],
-  mcd: ["mcdonald"],
-  western: ["chicken chop", "burger", "pasta", "steak", "western restaurant"],
-  coffee: ["cafe", "coffee shop", "kopi"],
-  bread: ["bakery", "roti", "pastry"],
-  mamak: ["roti canai", "nasi kandar", "mee goreng mamak"],
-};
+// Reasoning models think before answering; keyword lookup needs none of that, and it costs time.
+function reasoningOptions(model: string) {
+  if (model.startsWith("qwen/")) return { reasoning_effort: "none" };
+  if (model.startsWith("openai/gpt-oss")) return { reasoning_effort: "low" };
+  return {};
+}
 
 // unconfirmed: ticked diet filters nobody has checked this venue for, e.g. "Halal unconfirmed"; empty when all are confirmed
-type Candidate = { venue: Venue; match: VenueMatch; price: PriceRange; unconfirmed: string[] };
-// A ranked candidate, with the engine's reason when it gave one
-type Ranked = { candidate: Candidate; reasoning?: string };
+// hits: labels of the craving's food groups the venue matches; exact: how many of those it matches by the label itself
+type Candidate = {
+  venue: Venue;
+  match: VenueMatch;
+  price: PriceRange;
+  unconfirmed: string[];
+  hits: string[];
+  exact: number;
+};
 
 // First words that don't identify a chain, so "Kafe Sains" and "Kafe Bahasa" stay separate places.
 const GENERIC_FIRST_WORDS = new Set([
@@ -197,63 +225,22 @@ const nearness = (c: Candidate) => c.match.distanceMeters ?? UNKNOWN_DISTANCE_M;
 
 // Top 3 holds at most one branch per chain, always that chain's nearest branch in the list;
 // every other candidate, other branches included, keeps its order in moreMatches.
-function pickTopThree(ranked: Ranked[]): { top: Ranked[]; rest: Ranked[] } {
-  const top: Ranked[] = [];
-  const used = new Set<Ranked>();
+function pickTopThree(ranked: Candidate[]): { top: Candidate[]; rest: Candidate[] } {
+  const top: Candidate[] = [];
+  const used = new Set<Candidate>();
   const seenChains = new Set<string>();
   for (const entry of ranked) {
     if (top.length >= 3) break;
-    const key = chainKey(entry.candidate.venue.name);
+    const key = chainKey(entry.venue.name);
     if (seenChains.has(key)) continue;
     seenChains.add(key);
     const nearest = ranked
-      .filter((r) => !used.has(r) && chainKey(r.candidate.venue.name) === key)
-      .reduce((a, b) => (nearness(b.candidate) < nearness(a.candidate) ? b : a));
+      .filter((c) => !used.has(c) && chainKey(c.venue.name) === key)
+      .reduce((a, b) => (nearness(b) < nearness(a) ? b : a));
     used.add(nearest);
-    // A nearer branch swapped in keeps the reason given for the chain
-    top.push({ candidate: nearest.candidate, reasoning: entry.reasoning ?? nearest.reasoning });
+    top.push(nearest);
   }
-  return { top, rest: ranked.filter((r) => !used.has(r)) };
-}
-
-function escapeRegExp(text: string) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-// Lowercase and drop accents from Latin letters ("Café" -> "cafe") so spellings match; other scripts are kept.
-function fold(text: string) {
-  return text
-    .normalize("NFKD")
-    .replace(/(\p{Script=Latin})\p{M}+/gu, "$1")
-    .normalize("NFKC")
-    .toLowerCase();
-}
-
-function cravingPatterns(craving: string): RegExp[] {
-  const key = fold(craving).replace(/[^\p{L}\p{N} ]+/gu, "").replace(/\s+/g, " ").trim().replace(/s$/, "");
-  if (!key) return [];
-  const terms = [key, ...(CRAVING_ALIASES[key] ?? [])];
-  return terms.map((term) => {
-    const folded = escapeRegExp(fold(term));
-    // Latin terms must match whole words ("rice" is not "price"). Other scripts (Chinese, Japanese, ...) don't
-    // put spaces between words, so they match anywhere in the text.
-    return /[^\p{Script=Latin}\p{N}\s]/u.test(term)
-      ? new RegExp(folded, "iu")
-      : new RegExp(`(?<![\\p{L}\\p{N}])${folded}s?(?![\\p{L}\\p{N}])`, "iu");
-  });
-}
-
-function venueSearchText(venue: Venue) {
-  return fold(
-    [
-      venue.name,
-      venue.cuisine ?? "",
-      venue.description ?? "",
-      ...(venue.serves ?? []),
-      ...(venue.dietaryTags ?? []),
-      ...(venue.menuItems ?? []).map((m) => m.itemName).filter((name) => name !== PLACEHOLDER_MENU_ITEM),
-    ].join(" | "),
-  );
+  return { top, rest: ranked.filter((c) => !used.has(c)) };
 }
 
 function toVenueMatch(venue: Venue, price: PriceRange, budget: number): VenueMatch {
@@ -301,141 +288,107 @@ function rankByDistanceAndRating(a: Candidate, b: Candidate) {
 }
 
 
-function fallbackReason(c: Candidate, craving: string, hasPatterns: boolean) {
+// The card's "Why this pick": what it matched, then distance, price, halal and rating.
+// e.g. "Matches chinese, rice in Section 17: 3.4 km from campus centre, RM8-12, all within budget, halal."
+function reasonFor(c: Candidate, query: SearchQuery) {
   const parts = [c.match.withinBudget ? `RM${formatPriceRange(c.price)}, all within budget` : `RM${formatPriceRange(c.price)}, cheaper meals within budget`];
   if (c.match.distanceMeters !== undefined) parts.unshift(`${formatDistance(c.match.distanceMeters)} from campus centre`);
   if (c.match.isHalal) parts.push("halal");
   if (c.match.rating) parts.push(`rated ${c.match.rating.toFixed(1)}`);
-  const lead = hasPatterns ? `Matches "${craving}": ` : "";
+  const inArea = query.areas.length > 0 && c.match.area ? ` in ${c.match.area}` : "";
+  const lead = c.hits.length > 0 ? `Matches ${c.hits.join(", ")}${inArea}: ` : inArea ? `In ${c.match.area}: ` : "";
   return `${lead}${parts.join(", ")}.`;
 }
 
-async function rankWithGemini(
-  apiKey: string,
-  candidates: Candidate[],
-  craving: string,
-  maxBudget: number,
-  dietaryRestrictions: string[],
-): Promise<Ranked[]> {
-  // Gemini answers with these ids, so branches that share a name stay separate venues
-  const venues = candidates.map(({ venue, match, unconfirmed }, index) => ({
-    id: `v${index + 1}`,
-    name: venue.name,
-    cuisine: venue.cuisine ?? null,
-    description: venue.description ?? null,
-    serves: match.serves,
-    menuHints: (venue.menuItems ?? []).map((m) => m.itemName).filter((n) => n !== PLACEHOLDER_MENU_ITEM),
-    tags: venue.dietaryTags ?? [],
-    priceRangeMYR: [match.priceMinMYR, match.priceMaxMYR],
-    wholeRangeWithinBudget: match.withinBudget,
-    // "halal" | "non-halal" | "unknown", and "yes" | "no" | "unknown" for the rest
-    halal: venue.isHalal ?? "unknown",
-    vegetarian: venue.vegan === "yes" ? "yes" : (venue.vegetarian ?? "unknown"),
-    vegan: venue.vegan ?? "unknown",
-    noSeafood: venue.noSeafoodOption ?? "unknown",
-    // True when every diet choice above is confirmed for this venue; computed in code, not a guess
-    dietConfirmed: unconfirmed.length === 0,
-    rating: match.rating ?? null,
-    distanceMeters: match.distanceMeters ?? null,
-    area: match.area ?? null,
-  }));
+// The words the AI should translate the craving into: every area and the most common serves values. Cuisines are
+// left out: the model knows them, and every token counts against Groq's per-minute limit.
+type Vocabulary = { areas: string[]; serves: string[] };
 
-  const prompt = `
-You pick where a Universiti Malaya student should eat. Every venue below already fits their budget and distance,
-and none is known to break their diet choices, so judge them on the craving, distance, rating and price range.
-
-Student:
-- Location: somewhere on the Universiti Malaya campus; distances are from the campus centre
-- Craving: ${craving || "anything (no preference)"}
-- Budget: RM${maxBudget} for one meal
-- Diet choices: ${describeDiet(dietaryRestrictions)}
-
-Rules:
-- Each venue lists its diet answers ("halal", "vegetarian", "vegan", "noSeafood") and "dietConfirmed".
-  "dietConfirmed" false means at least one of the student's diet choices has not been checked for that venue ("unknown").
-- NEVER put a venue with "dietConfirmed" false in "recommendations". Put it in "moreMatches", after every
-  venue with "dietConfirmed" true. In particular, when the student picked Halal, a venue whose "halal" is "unknown" is never a main result.
-- When the student picked Halal only, do not call a venue halal unless its "halal" is "halal". Do not infer halal from the name or tags.
-- "priceRangeMYR" is [cheapest, dearest] usual meal. Every venue's cheapest meal fits the budget. Prefer venues
-  with "wholeRangeWithinBudget" true (the student can order freely), and between similar venues the lower typical price.
-- If there is a craving, only include venues that plausibly serve it (use "serves", "cuisine", "description", "menuHints", "tags" and the name;
-  Malaysian terms count, e.g. mee/kuey teow/laksa are noodles, nasi is rice, "mcd" means McDonald's).
-- "recommendations": the best 3 (fewer if fewer fit), best first. "reasoning" is one short sentence (under 25 words)
-  and mentions the craving when there is one.
-- "moreMatches": the ids of every other venue that also fits, best first. Do not repeat the recommendations.
-- Refer to venues by their "id" (e.g. "v12"), never by name. Several branches of a chain can share a name.
-
-Venues:
-${JSON.stringify(venues)}
-`;
-
-  const ai = new GoogleGenAI({ apiKey });
-  const response = await ai.models.generateContent({
-    model: "gemini-3.8-flash",
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseJsonSchema: {
-        type: Type.OBJECT,
-        properties: {
-          recommendations: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                venueId: { type: Type.STRING },
-                reasoning: { type: Type.STRING },
-              },
-              required: ["venueId", "reasoning"],
-            },
-          },
-          moreMatches: { type: Type.ARRAY, items: { type: Type.STRING } },
-        },
-        required: ["recommendations", "moreMatches"],
-      },
-    },
-  });
-
-  const parsed = JSON.parse(response.text ?? "{}") as {
-    recommendations?: { venueId: string; reasoning: string }[];
-    moreMatches?: string[];
+function buildVocabulary(venues: Venue[]): Vocabulary {
+  const areas = new Set<string>();
+  const serves = new Map<string, number>();
+  for (const venue of venues) {
+    const area = venueArea(venue.location);
+    if (area) areas.add(area);
+    for (const item of venue.serves ?? []) {
+      const key = item.toLowerCase().trim();
+      if (key) serves.set(key, (serves.get(key) ?? 0) + 1);
+    }
+  }
+  return {
+    areas: [...areas].sort(),
+    serves: [...serves].sort((a, b) => b[1] - a[1]).slice(0, PROMPT_SERVES_CAP).map(([item]) => item),
   };
-
-  // Map Gemini's ids back to our own data so price, distance and links can't be invented.
-  const used = new Set<number>();
-  const take = (id: string) => {
-    const index = Number(/^v(\d+)$/.exec(id.trim())?.[1]) - 1;
-    if (!(index >= 0 && index < candidates.length) || used.has(index)) return undefined;
-    used.add(index);
-    return candidates[index];
-  };
-
-  const ranked: Ranked[] = [];
-  for (const rec of parsed.recommendations ?? []) {
-    const candidate = take(rec.venueId);
-    if (candidate) ranked.push({ candidate, reasoning: rec.reasoning });
-  }
-  for (const id of parsed.moreMatches ?? []) {
-    const candidate = take(id);
-    if (candidate) ranked.push({ candidate });
-  }
-
-  // With no craving, nothing should be left out on purpose, so anything Gemini didn't mention goes to the
-  // end, nearest first. With a craving, an omission is usually deliberate (e.g. a cafe for a "noodles"
-  // search), so it's left out.
-  if (!craving) {
-    const omitted = candidates.filter((_, index) => !used.has(index)).sort(rankByDistanceAndRating);
-    for (const candidate of omitted) ranked.push({ candidate });
-  }
-
-  return ranked;
 }
 
-// The student's diet choices in words for the prompt; Halal and Non-Halal together mean no halal preference.
-function describeDiet(restrictions: string[]) {
-  const picked = effectiveRestrictions(restrictions);
-  if (picked.length === 0) return "none (no halal preference either)";
-  return picked.map((r) => (r === "Halal" ? "Halal only" : r === "Non-Halal" ? "Non-halal only" : r)).join(", ");
+// The AI's readings, by folded craving. Map order is insertion order, so the first key is the oldest.
+const queryCache = new Map<string, { at: number; query: SearchQuery }>();
+
+const queryKey = (craving: string) => fold(craving).replace(/\s+/g, " ").trim();
+
+function cachedQuery(key: string) {
+  const hit = queryCache.get(key);
+  if (hit && Date.now() - hit.at < QUERY_CACHE_MS) return hit.query;
+  queryCache.delete(key);
+  return undefined;
+}
+
+// After a 429 (Groq's per-minute token or daily request limit), searches use code's reading until Groq says to retry,
+// rather than each one spending a request to be refused.
+let aiPausedUntil = 0;
+
+// Asks the AI what the craving means as areas and keyword groups. Code checks the answer and does all the
+// filtering; the AI never sees venues, prices or diet data.
+async function interpretQuery(apiKey: string, craving: string, key: string, vocab: Vocabulary) {
+  const prompt = `
+A Universiti Malaya student typed this into a food search box: ${JSON.stringify(craving)}
+
+Turn it into search keywords for a database of eateries around campus. Answer with JSON only, in exactly this shape:
+{"areas": ["Section 17"], "groups": [{"label": "rice", "terms": ["rice", "nasi", "chicken rice"]}]}
+
+- "areas": neighbourhoods the student named, copied exactly from the area list below ("sec17" is "Section 17",
+  "paramount" is "Taman Paramount"). Empty when they named none.
+- "groups": one group per separate thing they want: a dish, cuisine, food type, or venue or brand name.
+  "chinese rice" is two groups (chinese, rice); "chicken rice" is one dish, so one group. Empty when they named none.
+  - "label": that thing in 1 to 3 words, spelled correctly, as the student meant it.
+  - "terms": up to 10 lowercase words or short phrases that appear in a venue's name, cuisine, menu or serves list
+    when it has that thing: the word itself, spelling variants, Malay, Chinese and English names, and specific dishes
+    of that kind. Prefer words from the lists below. Examples: "bakuteh" -> ["bak kut teh", "肉骨茶"];
+    "zus" -> ["zus", "zus coffee"]; "mcd" -> ["mcdonald"]; "noodles" -> ["noodle", "mee", "kuey teow", "laksa", "ramen"].
+  - Keep terms specific to that thing. No broader words that many other venues share: not "rice" or "malay" for
+    nasi lemak, not "teh" or "tea" for bak kut teh, not "coffee" for zus.
+- Leave out words that don't describe food or place, such as "food", "near", "cheap", "now".
+
+Areas: ${JSON.stringify(vocab.areas)}
+Serves: ${JSON.stringify(vocab.serves)}
+`;
+
+  const model = process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL;
+  const response = await fetch(GROQ_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      temperature: 0,
+      ...reasoningOptions(model),
+    }),
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+  });
+  if (response.status === 429) {
+    const waitSeconds = Number(response.headers.get("retry-after")) || DEFAULT_AI_PAUSE_S;
+    aiPausedUntil = Date.now() + waitSeconds * 1000;
+  }
+  if (!response.ok) throw new Error(`Groq returned ${response.status}: ${(await response.text()).slice(0, 300)}`);
+
+  const completion = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+  const query = sanitiseQuery(JSON.parse(completion.choices?.[0]?.message?.content ?? "{}"), vocab.areas);
+  if (query) {
+    if (queryCache.size >= QUERY_CACHE_MAX) queryCache.delete(queryCache.keys().next().value!);
+    queryCache.set(key, { at: Date.now(), query });
+  }
+  return query;
 }
 
 // Venue list cached in memory for a minute, so busy periods don't re-read every venue on every tap.
@@ -462,7 +415,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as Partial<DecideRequestPayload>;
 
-    const craving = String(body.craving ?? "").trim().slice(0, 60);
+    const craving = String(body.craving ?? "").trim().slice(0, MAX_CRAVING_CHARS);
     const maxBudget = Number(body.maxBudget ?? 15);
     const dietaryRestrictions = Array.isArray(body.dietaryRestrictions) ? body.dietaryRestrictions : [];
     const maxDistanceKm =
@@ -471,7 +424,6 @@ export async function POST(req: NextRequest) {
         : typeof body.maxDistanceKm === "number" && body.maxDistanceKm > 0
           ? body.maxDistanceKm
           : DEFAULT_MAX_DISTANCE_KM;
-    const patterns = cravingPatterns(craving);
 
     // 1. Load venues from Firestore (cached briefly so every tap doesn't re-read the whole collection)
     let venues = await loadVenues();
@@ -479,81 +431,75 @@ export async function POST(req: NextRequest) {
     const knownPlaceIds = new Set(venues.map((v) => v.placeId).filter(Boolean));
     venues = [...venues, ...OFF_CAMPUS_DRIVING_HOTSPOTS.filter((v) => !knownPlaceIds.has(v.placeId))];
 
-    // 2. Drop venues that can't work: no price, cheapest meal over budget, known to break a ticked diet filter, or too far.
-    // A venue nobody has checked for a ticked filter stays, marked unconfirmed, and is kept out of the top 3 below.
-    // Venues with no coordinates are the hand-seeded on-campus ones, so the distance filter keeps them.
-    const candidates: Candidate[] = venues
-      .flatMap((venue) => {
-        const price = venuePriceRange(venue);
-        const diet = assessDiet(venue, dietaryRestrictions);
-        return price && diet.fits
-          ? [{ venue, price, match: toVenueMatch(venue, price, maxBudget), unconfirmed: diet.unconfirmed }]
-          : [];
-      })
-      .filter(({ price, match }) => {
-        if (!fitsBudget(price, maxBudget)) return false;
-        return maxDistanceKm === null || match.distanceMeters === undefined || match.distanceMeters <= maxDistanceKm * 1000;
-      });
-
-    const respond = (engine: DecideResponseData["engine"], ranked: Ranked[]) => {
-      // Confirmed venues keep their order and come first; unconfirmed ones follow, only ever in moreMatches.
-      const confirmed = ranked.filter((r) => r.candidate.unconfirmed.length === 0);
-      const unconfirmed = ranked.filter((r) => r.candidate.unconfirmed.length > 0);
-      const { top, rest: confirmedRest } = pickTopThree(confirmed);
-      const rest = [...confirmedRest, ...unconfirmed];
-      return NextResponse.json<DecideResponseData>(
-        {
-          recommendations: top.map(({ candidate, reasoning }) => ({
-            ...candidate.match,
-            reasoning: reasoning ?? fallbackReason(candidate, craving, patterns.length > 0),
-          })),
-          moreMatches: rest.map(({ candidate }) => candidate.match),
-          engine,
-        },
-        { status: 200 },
-      );
-    };
-
-    if (candidates.length === 0) return respond("fallback", []);
-
-    // Keyword matches against serves, name, tags and menu, worked out once rather than inside the sorts
-    const cravingHits = new Set(
-      patterns.length === 0
-        ? candidates
-        : candidates.filter(({ venue }) => {
-            const text = venueSearchText(venue);
-            return patterns.some((p) => p.test(text));
-          }),
-    );
-    const matchesCraving = (c: Candidate) => cravingHits.has(c);
-
-    // 3. Let Gemini pick the best 3 and order the rest by the craving
-    const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-    if (apiKey) {
-      try {
-        // Send Gemini the 40 most promising venues (keyword matches first, then confirmed diet, then nearest); the
-        // rest follow in code order. With a craving, only keyword matches are added back, as Gemini would have dropped the rest.
-        const ordered = [...candidates].sort(
-          (a, b) =>
-            Number(matchesCraving(b)) - Number(matchesCraving(a)) ||
-            Number(a.unconfirmed.length > 0) - Number(b.unconfirmed.length > 0) ||
-            rankByDistanceAndRating(a, b),
-        );
-        const overflow = ordered.slice(GEMINI_CANDIDATE_CAP).filter(matchesCraving);
-        const ranked = await rankWithGemini(apiKey, ordered.slice(0, GEMINI_CANDIDATE_CAP), craving, maxBudget, dietaryRestrictions);
-        if (ranked.length > 0) return respond("gemini", [...ranked, ...overflow.map((candidate) => ({ candidate }))]);
-        console.warn("Gemini returned no usable venues, using code-only fallback");
-      } catch (err) {
-        console.warn("Gemini ranking failed, using code-only fallback:", err);
+    // 2. Read the craving into areas and food groups: the AI's reading when it is cached or can be fetched,
+    // otherwise code's (commas split it; known area names and food aliases are recognised)
+    const vocab = buildVocabulary(venues);
+    let query = craving ? parseQueryLocally(craving, vocab.areas) : EMPTY_QUERY;
+    let engine: DecideResponseData["engine"] = "fallback";
+    if (craving) {
+      const key = queryKey(craving);
+      const apiKey = process.env.GROQ_API_KEY;
+      let aiQuery = cachedQuery(key);
+      if (!aiQuery && apiKey && !body.skipAi && Date.now() >= aiPausedUntil) {
+        try {
+          aiQuery = await interpretQuery(apiKey, craving, key, vocab);
+        } catch (err) {
+          console.warn("AI could not read the craving, using code's reading:", err);
+        }
+      }
+      if (aiQuery) {
+        query = aiQuery;
+        engine = "ai";
       }
     }
+    // A named area means the student wants to go there, so the distance limit doesn't apply
+    const distanceLimitM = query.areas.length > 0 || maxDistanceKm === null ? null : maxDistanceKm * 1000;
 
-    // 4. Code-only fallback: keep the keyword matches, then rank
-    const ranked = candidates.filter(matchesCraving).sort(rankByDistanceAndRating);
+    // 3. Drop venues that can't work: no price, cheapest meal over budget, known to break a ticked diet filter,
+    // too far, outside a named area, or matching none of the food groups.
+    // A venue nobody has checked for a ticked filter stays, marked unconfirmed, and is kept out of the top 3 below.
+    // Venues with no coordinates are the hand-seeded on-campus ones, so the distance filter keeps them.
+    const findCandidates = (q: SearchQuery): Candidate[] => {
+      const matchGroups = compileQuery(q);
+      return venues.flatMap((venue) => {
+        const price = venuePriceRange(venue);
+        if (!price || !fitsBudget(price, maxBudget)) return [];
+        const diet = assessDiet(venue, dietaryRestrictions);
+        if (!diet.fits) return [];
+        const match = toVenueMatch(venue, price, maxBudget);
+        if (distanceLimitM !== null && match.distanceMeters !== undefined && match.distanceMeters > distanceLimitM) return [];
+        if (q.areas.length > 0 && !(match.area && q.areas.includes(match.area))) return [];
+        const { hits, exact } = matchGroups(venueSearchText(venue));
+        if (q.groups.length > 0 && hits.length === 0) return [];
+        return [{ venue, price, match, unconfirmed: diet.unconfirmed, hits, exact }];
+      });
+    };
+    let candidates = findCandidates(query);
+    // Code's reading keeps "chinese rice" as one phrase; when that finds nothing, try its words separately
+    const split = candidates.length === 0 && engine === "fallback" ? splitPhrases(query) : undefined;
+    if (split) {
+      query = split;
+      candidates = findCandidates(split);
+    }
 
-    return respond(
-      "fallback",
-      ranked.map((candidate) => ({ candidate })),
+    // 4. Venues matching more of the food groups first ("chinese" and "rice" before just "rice"), then more of them
+    // by the label itself ("nasi lemak" before a looser "rice"), then nearest, within budget, best rated, cheapest
+    const ranked = candidates.sort(
+      (a, b) => b.hits.length - a.hits.length || b.exact - a.exact || rankByDistanceAndRating(a, b),
+    );
+
+    // Confirmed venues keep their order and come first; unconfirmed ones follow, only ever in moreMatches.
+    const confirmed = ranked.filter((c) => c.unconfirmed.length === 0);
+    const unconfirmed = ranked.filter((c) => c.unconfirmed.length > 0);
+    const { top, rest } = pickTopThree(confirmed);
+    return NextResponse.json<DecideResponseData>(
+      {
+        recommendations: top.map((c) => ({ ...c.match, reasoning: reasonFor(c, query) })),
+        moreMatches: [...rest, ...unconfirmed].map((c) => c.match),
+        engine,
+        query,
+      },
+      { status: 200 },
     );
   } catch (error) {
     console.error("Error in /api/decide route:", error);

@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { groupEnabled } from "@/lib/features";
-import MaterialIcon from "./ui/MaterialIcon";
+import { groupEnabled } from "@/lib/featureFlags";
+import MaterialIcon from "@/components/ui/MaterialIcon";
 
 type Tab = "explore" | "group";
 

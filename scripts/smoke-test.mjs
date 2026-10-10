@@ -62,23 +62,46 @@ const decideCases = [
   { label: "noodles, RM10, halal", craving: "noodles", maxBudget: 10, maxDistanceKm: 3, dietaryRestrictions: ["Halal"] },
   { label: "accented craving", craving: "café", maxBudget: 30, maxDistanceKm: 3, dietaryRestrictions: [] },
   { label: "non-Latin craving", craving: "面", maxBudget: 30, maxDistanceKm: 3, dietaryRestrictions: [] },
+  // Several things at once; a named area overrides the 1 km limit. skipAi checks code's own reading.
+  { label: "area + foods, code", craving: "sec17, chinese, rice", maxBudget: 30, maxDistanceKm: 1, dietaryRestrictions: [], skipAi: true, expectAreas: ["Section 17"] },
+  { label: "area + foods, AI", craving: "sec17, chinese, rice", maxBudget: 30, maxDistanceKm: 1, dietaryRestrictions: [], expectAreas: ["Section 17"] },
+  { label: "phrase without commas, code", craving: "sec17 chinese rice", maxBudget: 30, maxDistanceKm: 1, dietaryRestrictions: [], skipAi: true, expectAreas: ["Section 17"] },
+  { label: "area only, halal", craving: "ss2", maxBudget: 30, maxDistanceKm: 1, dietaryRestrictions: ["Halal"], skipAi: true, expectAreas: ["SS2"] },
+  { label: "brand", craving: "zus", maxBudget: 30, maxDistanceKm: null, dietaryRestrictions: [], expectName: /zus/i },
+  { label: "misspelt dish, AI", craving: "bakuteh", maxBudget: 40, maxDistanceKm: null, dietaryRestrictions: [], expectName: /bak kut teh|bah kut teh|肉骨茶/i },
 ];
-for (const { label, ...payload } of decideCases) {
+for (const { label, expectAreas, expectName, ...payload } of decideCases) {
   const { status, data } = await post("/api/decide", payload);
   const recs = data.recommendations;
   const more = data.moreMatches;
+  const query = data.query;
+  const tags = query ? [...query.areas, ...query.groups.map((g) => g.label)].join(", ") : "none";
   report(
     `POST /api/decide (${label})`,
     status === 200 && Array.isArray(recs) && Array.isArray(more),
-    status === 200 ? `${recs?.length ?? 0} top, ${more?.length ?? 0} more, engine ${data.engine}` : `status ${status}: ${data.error ?? ""}`,
+    status === 200
+      ? `${recs?.length ?? 0} top, ${more?.length ?? 0} more, engine ${data.engine}, read as [${tags}]`
+      : `status ${status}: ${data.error ?? ""}`,
   );
   if (Array.isArray(recs) && Array.isArray(more)) {
     const all = [...recs, ...more];
+    report(`  query echoed (${label})`, Array.isArray(query?.areas) && Array.isArray(query?.groups));
     report(`  top picks <= 3 (${label})`, recs.length <= 3);
     report(`  cheapest meal within RM${payload.maxBudget} (${label})`, all.every((r) => r.priceMinMYR <= r.priceMaxMYR && r.priceMinMYR <= payload.maxBudget));
     report(`  withinBudget matches price range (${label})`, all.every((r) => r.withinBudget === r.priceMaxMYR <= payload.maxBudget));
     report(`  all carry diet answers (${label})`, all.every((r) => r.diet && typeof r.diet === "object"));
-    if (payload.maxDistanceKm !== null) {
+    if (expectAreas) {
+      report(`  read area ${expectAreas} (${label})`, expectAreas.every((a) => query?.areas.includes(a)));
+      report(`  found some (${label})`, all.length > 0);
+      report(`  all in ${expectAreas} (${label})`, all.every((r) => expectAreas.includes(r.area)));
+    }
+    // A dish can match through serves or the menu too, so only some top pick need carry it in the name
+    if (expectName) report(`  a top pick named ${expectName} (${label})`, recs.some((r) => expectName.test(r.venueName)));
+    if (payload.dietaryRestrictions.includes("Halal")) {
+      report(`  top picks all halal (${label})`, recs.every((r) => r.isHalal));
+    }
+    // A named area overrides the distance limit
+    if (payload.maxDistanceKm !== null && !query?.areas.length) {
       report(`  all within ${payload.maxDistanceKm} km (${label})`, all.every((r) => r.distanceMeters === undefined || r.distanceMeters <= payload.maxDistanceKm * 1000));
     }
     // A venue nobody has checked is kept, but only under See more: the top picks must be confirmed, and no

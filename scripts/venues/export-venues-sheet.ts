@@ -5,13 +5,13 @@
 
 import * as fs from "fs";
 import { collection, getDocs } from "firebase/firestore";
-import type { Venue } from "../src/lib/types";
-import { normalizeVenueDiet } from "../src/lib/diet";
-import { googleMapsUrl } from "../src/lib/maps";
-import { formatPriceRange, venuePriceRange } from "../src/lib/price";
-import { venueArea } from "../src/lib/area";
-import { BOM, SHEET_COLUMNS, sortByArea, toCsv } from "./csv";
-import { connectFirestore, runScript } from "./firestore";
+import type { Venue } from "../../src/lib/types";
+import { normalizeVenueDiet } from "../../src/lib/diet";
+import { googleMapsUrl } from "../../src/lib/mapsLinks";
+import { formatPriceRange, venuePriceRange } from "../../src/lib/price";
+import { venueArea } from "../../src/lib/area";
+import { BOM, SHEET_COLUMNS, sortByArea, toCsv } from "../lib/sheet-csv";
+import { connectFirestore, runScript } from "../lib/firestore";
 
 // "12-25"; blank when the venue has no price
 function priceCell(v: Venue) {

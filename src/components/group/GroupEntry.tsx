@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createRoom, joinRoom } from "@/lib/api";
+import { createRoom, joinRoom } from "@/lib/apiClient";
 import { DIET_TAGS } from "@/lib/filters";
 import MaterialIcon from "@/components/ui/MaterialIcon";
 

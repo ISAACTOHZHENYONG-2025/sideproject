@@ -44,6 +44,34 @@ function normalise(area: string): string | undefined {
   return name && !STREET.test(name) ? name : undefined;
 }
 
+// Words students type for campus itself
+const CAMPUS_WORDS = new Set(["um", "campus", "universiti malaya", "university malaya", "university of malaya"]);
+
+// Loose spellings fold to one key: "Sec17", "seksyen 17", "s17" -> "section 17"; "SS 2" -> "ss2".
+function areaKey(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/\b(?:seksyen|section|sect|sec|sek|s)\s*(\d+[a-z]?)\b/g, "section $1")
+    .replace(/\bss\s*(\d+)\b/g, "ss$1")
+    .replace(/\bpjs\s*(\d+)\b/g, "pjs $1")
+    .replace(/[^\p{L}\p{N} ]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// The known area a student's text names, or undefined. Matches "sec17" to "Section 17" and "paramount" to
+// "Taman Paramount"; knownAreas are the names venueArea() gives.
+export function matchArea(text: string, knownAreas: readonly string[]): string | undefined {
+  const key = areaKey(text);
+  if (!key) return undefined;
+  if (CAMPUS_WORDS.has(key)) return knownAreas.find((a) => a === "UM");
+  const alias = ALIASES[key];
+  return knownAreas.find((area) => {
+    const known = areaKey(area);
+    return known === key || known.replace(/^taman /, "") === key || area === alias;
+  });
+}
+
 export function venueArea(address: string | undefined): string | undefined {
   if (!address) return undefined;
   for (const [pattern, name] of LANDMARKS) if (pattern.test(address)) return name;

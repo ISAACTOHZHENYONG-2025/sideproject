@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DecideResponseData, RecommendationItem, VenueMatch } from "@/app/api/decide/route";
-import BottomNav from "@/components/BottomNav";
-import { decide, toDecidePayload } from "@/lib/api";
+import BottomNav from "@/components/layout/BottomNav";
+import { decide, toDecidePayload } from "@/lib/apiClient";
 import { assessDiet } from "@/lib/diet";
 import type { FilterDraft } from "@/lib/filters";
 import FilterBottomSheet from "./FilterBottomSheet";
@@ -52,7 +52,7 @@ export default function HomePage({ initialFilters }: HomePageProps) {
   const [fetchedFor, setFetchedFor] = useState<FilterDraft | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationItem[]>([]);
   const [fetchedMoreMatches, setFetchedMoreMatches] = useState<VenueMatch[]>([]);
-  const [engine, setEngine] = useState<DecideResponseData["engine"]>("fallback");
+  const [query, setQuery] = useState<DecideResponseData["query"] | null>(null);
   const [showMore, setShowMore] = useState(false);
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState("");
@@ -60,12 +60,15 @@ export default function HomePage({ initialFilters }: HomePageProps) {
 
   const loadMatches = useCallback(async (filters: FilterDraft) => {
     const requestId = ++latestRequest.current;
+    const payload = toDecidePayload(filters);
+    let quick: DecideResponseData;
     try {
-      const data = await decide(toDecidePayload(filters));
+      // Code's reading of the craving first, so the page never waits on the AI
+      quick = await decide({ ...payload, skipAi: true });
       if (requestId !== latestRequest.current) return;
-      setRecommendations(data.recommendations);
-      setFetchedMoreMatches(data.moreMatches);
-      setEngine(data.engine);
+      setRecommendations(quick.recommendations);
+      setFetchedMoreMatches(quick.moreMatches);
+      setQuery(quick.query);
       setShowMore(false);
       setFetchedFor(filters);
       setStatus("ready");
@@ -73,6 +76,20 @@ export default function HomePage({ initialFilters }: HomePageProps) {
       if (requestId !== latestRequest.current) return;
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setStatus("error");
+      return;
+    }
+
+    // Then the AI's reading (spelling fixes, synonyms, "chinese rice" as two things) when there is a craving and it
+    // wasn't already cached; on any failure the quick results stay
+    if (!payload.craving || quick.engine === "ai") return;
+    try {
+      const smart = await decide(payload);
+      if (requestId !== latestRequest.current || smart.engine !== "ai") return;
+      setRecommendations(smart.recommendations);
+      setFetchedMoreMatches(smart.moreMatches);
+      setQuery(smart.query);
+    } catch {
+      // Keep the quick results
     }
   }, []);
 
@@ -119,6 +136,8 @@ export default function HomePage({ initialFilters }: HomePageProps) {
       ? "Finding Meals..."
       : "Find My Optimal Meal";
   const totalMatches = matches.length + moreMatches.length;
+  // What the craving was read as, e.g. ["Section 17", "chinese", "rice"]
+  const queryTags = query ? [...query.areas, ...query.groups.map((g) => g.label)] : [];
 
   return (
     <div className="bg-[#f0f3f6] text-on-surface antialiased min-h-screen flex justify-center">
@@ -133,15 +152,26 @@ export default function HomePage({ initialFilters }: HomePageProps) {
 
         <main className="flex-1 px-3 pt-3 flex flex-col gap-3 pb-24">
           <div className="flex items-center justify-between px-1">
-            <h2 className="text-[15px] font-extrabold text-on-surface tracking-tight">
-              {engine === "gemini" ? "Gemini AI Top Matches" : "Top Matches"}
-            </h2>
+            <h2 className="text-[15px] font-extrabold text-on-surface tracking-tight">Top Matches</h2>
             {status === "ready" ? (
               <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#E6F7ED] text-primary tabular-nums">
                 {totalMatches} Found
               </span>
             ) : null}
           </div>
+
+          {queryTags.length > 0 ? (
+            <div aria-label="Searching for" className="flex flex-wrap gap-1 px-1 -mt-1">
+              {queryTags.map((tag) => (
+                <span
+                  className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-[6px] bg-[#F1F3F5] text-[#495057]"
+                  key={tag}
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          ) : null}
 
           {status === "loading" && matches.length === 0 ? (
             <>
@@ -185,7 +215,7 @@ export default function HomePage({ initialFilters }: HomePageProps) {
           <div className={`flex flex-col gap-3 transition-opacity ${status === "loading" ? "opacity-50" : ""}`}>
             {matches.map((match) => (
               <FoodMatchCard
-                insightLabel={engine === "gemini" ? "Gemini Insight" : "Why this pick"}
+                insightLabel="Why this pick"
                 key={match.id}
                 match={match}
               />

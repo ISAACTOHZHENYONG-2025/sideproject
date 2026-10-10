@@ -18,11 +18,12 @@
 // hours and services refreshed; their name, price, halal and serves are left alone.
 
 import * as fs from "fs";
+import * as path from "path";
 import { collection, getDocs, doc, writeBatch } from "firebase/firestore";
-import type { Venue } from "../src/lib/types";
-import { UM_CAMPUS_CENTER, distanceMeters, type LatLng } from "../src/lib/geo";
-import type { PriceRange } from "../src/lib/price";
-import { connectFirestore, loadEnvLocal, runScript } from "./firestore";
+import type { Venue } from "../../src/lib/types";
+import { UM_CAMPUS_CENTER, distanceMeters, type LatLng } from "../../src/lib/geo";
+import type { PriceRange } from "../../src/lib/price";
+import { connectFirestore, loadEnvLocal, runScript } from "../lib/firestore";
 
 loadEnvLocal();
 
@@ -56,7 +57,7 @@ const AREAS: Record<string, { label: string; center: LatLng; extent: number; min
 const DEFAULT_MAX_CALLS = 95;
 // Raw Google results and unsearched cells are saved here after every call, so a dry run can be followed
 // by a real run without paying twice, and a search stopped by the daily quota can be resumed. One file per area.
-const cacheFile = (area: string) => (area === "um" ? "places-cache.json" : `places-cache-${area}.json`);
+const cacheFile = (area: string) => `data/places-cache/${area}.json`;
 const CELL_SPACING_M = 500;
 const MAX_RESULTS = 20;
 const FOOD_TYPES = ["restaurant", "cafe", "coffee_shop", "bakery", "fast_food_restaurant", "meal_takeaway", "food_court"];
@@ -329,11 +330,13 @@ async function searchGrid({ label, center, extent, cacheFile }: SearchArea, maxC
     console.log(`Searching ${queue.length} cells within about ${extent} m of ${label} (max ${maxCalls} calls)...`);
   }
 
-  const save = () =>
+  const save = () => {
+    fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
     fs.writeFileSync(
       cacheFile,
       JSON.stringify({ extent, calls: totalCalls, places: [...found.values()], pending: queue } satisfies SearchCache),
     );
+  };
 
   let calls = 0;
   let stopReason = "";

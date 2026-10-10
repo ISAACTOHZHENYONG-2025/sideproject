@@ -111,9 +111,9 @@ export default function FilterBottomSheet({
                 className={inputClass}
                 enterKeyHint="search"
                 id="craving-input"
-                maxLength={60}
+                maxLength={100}
                 onChange={(event) => onChange({ ...draft, craving: event.target.value })}
-                placeholder="Rice, noodles, fast food, mcd..."
+                placeholder="sec17, chinese, rice · zus · bak kut teh"
                 type="search"
                 value={draft.craving}
               />

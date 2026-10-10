@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collection, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { requireGroupEnabled } from "@/lib/features";
+import { requireGroupEnabled } from "@/lib/featureFlags";
 
 function generateRoomCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";

@@ -60,7 +60,7 @@ export function filtersFromSearchParams(params: SearchParams): FilterDraft {
   const tags = get("tags");
 
   return {
-    craving: (get("craving") ?? "").slice(0, 60),
+    craving: (get("craving") ?? "").slice(0, 100),
     budget:
       Number.isFinite(budget) && budget >= BUDGET_RANGE.min && budget <= BUDGET_RANGE.max
         ? budget
