@@ -46,6 +46,12 @@ const AREAS: Record<string, { label: string; center: LatLng; extent: number; min
     extent: 500,
     minReviews: 50,
   },
+  sec17: {
+    label: "Section 17, Petaling Jaya",
+    center: { latitude: 3.1239, longitude: 101.6343 },
+    extent: 700,
+    minReviews: 50,
+  },
 };
 const DEFAULT_MAX_CALLS = 95;
 // Raw Google results and unsearched cells are saved here after every call, so a dry run can be followed
