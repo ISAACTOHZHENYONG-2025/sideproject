@@ -3,6 +3,10 @@ export interface MenuItem {
   priceMYR: number;
 }
 
+// A diet answer from the venues sheet. "unknown" (or unset) means nobody has checked yet.
+export type DietAnswer = "yes" | "no" | "unknown";
+export type HalalStatus = "halal" | "non-halal" | "unknown";
+
 export interface Venue {
   id?: string;
   name: string;
@@ -12,14 +16,15 @@ export interface Venue {
   priceMaxMYR?: number;
   // Old single price, still on docs not re-imported since ranges arrived; read it through venuePriceRange().
   avgPriceMYR?: number;
-  // true: checked and halal (shows the HALAL badge). false: checked and not halal. Unset: not checked yet.
-  isHalal?: boolean;
-  // Diet and allergy info, filled in from the venues sheet. Unset means nobody has checked yet.
+  // "halal" shows the HALAL badge. Unset is the same as "unknown".
+  // Docs not re-imported since the three-word answers still hold true/false; read venues through normalizeVenueDiet().
+  isHalal?: HalalStatus;
+  // Diet and allergy info, filled in from the venues sheet. Unset is the same as "unknown".
   // vegetarian: checked by hand that the venue is vegetarian, not just that it has a veg dish.
-  vegetarian?: boolean;
-  vegan?: boolean;
-  // True when there is a decent dish without seafood
-  noSeafoodOption?: boolean;
+  vegetarian?: DietAnswer;
+  vegan?: DietAnswer;
+  // "yes" when there is a decent dish without seafood
+  noSeafoodOption?: DietAnswer;
   // True when the venue is non-halal (e.g. serves pork or alcohol); separate from isHalal so it can be answered on its own
   nonHalal?: boolean;
   // True when there is a decent dish without beef

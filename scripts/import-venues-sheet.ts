@@ -1,13 +1,15 @@
 // Reads venues.csv (from db:export-sheet) and updates each venue's halal, diet flags, price range, food types, allergy notes and research notes by id.
+// halal is halal / non-halal / unknown; vegetarian, vegan and noSeafood are yes / no / unknown. The old Y / N still load (Y = halal or yes).
 // priceMYR holds a range like "12-25"; a single "15" sets min and max to 15.
 //   npm run db:import-sheet -- --dry-run   # show what would change, write nothing
 //   npm run db:import-sheet                # write the changes to Firestore
 //   npm run db:import-sheet -- --file=my-venues.csv
-// Blank cells leave that field as it is. Rows with bad values are skipped.
+// Blank cells leave that field as it is (a venue with no answer already counts as unknown). Rows with bad values are skipped.
 
 import * as fs from "fs";
 import { collection, deleteField, doc, getDocs, writeBatch, type FieldValue } from "firebase/firestore";
-import type { Venue } from "../src/lib/types";
+import { normalizeVenueDiet } from "../src/lib/diet";
+import type { DietAnswer, HalalStatus, Venue } from "../src/lib/types";
 import { formatPriceRange, parsePriceRange, venuePriceRange } from "../src/lib/price";
 import { parseCsv } from "./csv";
 import { connectFirestore, runScript } from "./firestore";
@@ -43,6 +45,30 @@ function parseYesNo(column: string, value: string): boolean | undefined | Error 
   if (["n", "no", "false", "0"].includes(v)) return false;
   return new Error(`${column} must be Y or N, got "${value}"`);
 }
+
+const isUnknown = (v: string) => ["unknown", "?"].includes(v);
+
+// yes / no / unknown; the old Y / N still work
+function parseAnswer(column: string, value: string): DietAnswer | undefined | Error {
+  const v = value.trim().toLowerCase();
+  if (isUnknown(v)) return "unknown";
+  const yesNo = parseYesNo(column, value);
+  if (yesNo instanceof Error) return new Error(`${column} must be yes, no or unknown, got "${value}"`);
+  return yesNo === undefined ? undefined : yesNo ? "yes" : "no";
+}
+
+// halal / non-halal / unknown; the old Y (halal) and N (non-halal) still work
+function parseHalal(value: string): HalalStatus | undefined | Error {
+  const v = value.trim().toLowerCase();
+  if (isUnknown(v)) return "unknown";
+  if (["halal", "y", "yes", "true", "1"].includes(v)) return "halal";
+  if (["non-halal", "non halal", "nonhalal", "n", "no", "false", "0"].includes(v)) return "non-halal";
+  return v ? new Error(`halal must be halal, non-halal or unknown, got "${value}"`) : undefined;
+}
+
+// A cell differs from the stored value unless both mean the same: an unset field is "unknown".
+// Compared with the raw stored value, so a doc still holding true/false gets rewritten as a word.
+const differs = (cell: string, stored: string | undefined) => (stored === undefined ? cell !== "unknown" : cell !== stored);
 
 function parseNote(column: string, value: string, maxLength: number): string | undefined | Error {
   const note = value.trim().replace(/\s+/g, " ");
@@ -98,10 +124,10 @@ runScript(async () => {
       skipped++;
       return;
     }
-    const halal = parseYesNo("halal", cell("halal"));
-    const vegetarian = parseYesNo("vegetarian", cell("vegetarian"));
-    const vegan = parseYesNo("vegan", cell("vegan"));
-    const noSeafood = parseYesNo("noSeafood", cell("noseafood"));
+    const halal = parseHalal(cell("halal"));
+    const vegetarian = parseAnswer("vegetarian", cell("vegetarian"));
+    const vegan = parseAnswer("vegan", cell("vegan"));
+    const noSeafood = parseAnswer("noSeafood", cell("noseafood"));
     // Optional columns: sheets exported before they existed leave these flags alone.
     const nonHalal = parseYesNo("nonHalal", cell("nonhalal"));
     const noBeef = parseYesNo("noBeef", cell("nobeef"));
@@ -122,15 +148,24 @@ runScript(async () => {
     const data: Update = {};
     const changes: string[] = [];
 
-    if (typeof halal === "boolean" && halal !== venue.isHalal) {
+    // What the app reads: docs not re-imported yet may still hold true/false
+    const current = normalizeVenueDiet(venue);
+    if (typeof halal === "string" && differs(halal, venue.isHalal)) {
       data.isHalal = halal;
-      const was = venue.isHalal === undefined ? "blank" : venue.isHalal ? "Y" : "N";
-      changes.push(`halal ${was} -> ${halal ? "Y" : "N"}`);
+      changes.push(`halal ${current.isHalal ?? "unknown"} -> ${halal}`);
     }
-    const flags = [
+    const answers = [
       ["vegetarian", "vegetarian", vegetarian],
       ["vegan", "vegan", vegan],
       ["noSeafood", "noSeafoodOption", noSeafood],
+    ] as const;
+    for (const [label, field, value] of answers) {
+      if (typeof value === "string" && differs(value, venue[field])) {
+        data[field] = value;
+        changes.push(`${label} ${current[field] ?? "unknown"} -> ${value}`);
+      }
+    }
+    const flags = [
       ["nonHalal", "nonHalal", nonHalal],
       ["noBeef", "noBeefOption", noBeef],
     ] as const;

@@ -5,7 +5,7 @@ import { requireGroupEnabled } from "@/lib/features";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
 import { mapsUrlForVenueName } from "@/lib/maps";
-import { meetsDiet } from "@/lib/diet";
+import { assessDiet, mergeGroupRestrictions, normalizeVenueDiet } from "@/lib/diet";
 import { budgetComfort, fitsBudget, midpoint, venuePriceRange } from "@/lib/price";
 
 export interface Participant {
@@ -116,20 +116,15 @@ export async function POST(req: NextRequest) {
       ? "walk_or_public"
       : "private_vehicle";
 
-    const uniqueDietarySet = new Set<string>();
-    participants.forEach((p) => {
-      p.dietaryRestrictions.forEach((r) => {
-        if (r && r.trim()) uniqueDietarySet.add(r.trim());
-      });
-    });
-    const mergedDietaryRestrictions = Array.from(uniqueDietarySet);
+    // If any member picked Halal only, the whole group is halal-first. Otherwise the members' other filters add up.
+    const mergedDietaryRestrictions = mergeGroupRestrictions(participants.map((p) => p.dietaryRestrictions));
 
     // 4. Query Firestore venues
     let candidateVenues: Venue[] = [];
     try {
       const venuesSnap = await getDocs(collection(db, "venues"));
       venuesSnap.forEach((vDoc) => {
-        candidateVenues.push({ id: vDoc.id, ...(vDoc.data() as Omit<Venue, "id">) });
+        candidateVenues.push(normalizeVenueDiet({ id: vDoc.id, ...(vDoc.data() as Omit<Venue, "id">) }));
       });
     } catch (dbErr) {
       console.warn("Could not fetch venues from Firestore, falling back:", dbErr);
@@ -142,7 +137,7 @@ export async function POST(req: NextRequest) {
           location: "12th Residential College, Universiti Malaya (Shuttle Bus Stop)",
           priceMinMYR: 6,
           priceMaxMYR: 10,
-          isHalal: true,
+          isHalal: "halal",
           dietaryTags: ["Halal", "Budget-Friendly", "Nasi Campur"],
           menuItems: [
             { itemName: "Nasi Campur (Ayam Goreng + 2 Sayur)", priceMYR: 7.5 },
@@ -155,7 +150,7 @@ export async function POST(req: NextRequest) {
           location: "Kompleks Perdanasiswa (Central Hub)",
           priceMinMYR: 7,
           priceMaxMYR: 12,
-          isHalal: true,
+          isHalal: "halal",
           dietaryTags: ["Halal", "Economy Rice", "Student Union"],
           menuItems: [
             { itemName: "Nasi Kandar Ayam Bawang + Bendi", priceMYR: 9.5 },
@@ -167,7 +162,7 @@ export async function POST(req: NextRequest) {
           location: "Faculty of Science, near Department of Chemistry",
           priceMinMYR: 8,
           priceMaxMYR: 14,
-          isHalal: true,
+          isHalal: "halal",
           dietaryTags: ["Halal", "Western", "Noodles"],
           menuItems: [
             { itemName: "Claypot Yee Mee", priceMYR: 8.5 },
@@ -178,9 +173,14 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Check Gemini API key
-    // Every member's diet filter must be met. The same rule as /api/decide: a venue passes only if it is
-    // marked as meeting it (an unchecked halal venue still passes, see src/lib/diet.ts).
-    const dietVenues = candidateVenues.filter((v) => meetsDiet(v, mergedDietaryRestrictions));
+    // The same rule as /api/decide: a venue known to break the group's diet is out, and one nobody has checked
+    // comes after every confirmed venue. Unchecked venues are only offered when fewer than 3 confirmed ones exist.
+    const assessed = candidateVenues.map((v) => ({ v, diet: assessDiet(v, mergedDietaryRestrictions) })).filter((e) => e.diet.fits);
+    const confirmedVenues = assessed.filter((e) => e.diet.unconfirmed.length === 0).map((e) => e.v);
+    const unconfirmedVenues = assessed.filter((e) => e.diet.unconfirmed.length > 0).map((e) => e.v);
+    const dietVenues = confirmedVenues.length >= 3 ? confirmedVenues : [...confirmedVenues, ...unconfirmedVenues];
+    const confirmedSet = new Set(confirmedVenues);
+    const isConfirmed = (v: Venue) => confirmedSet.has(v);
     if (dietVenues.length === 0) {
       return NextResponse.json(
         {
@@ -216,12 +216,14 @@ AGGREGATED GROUP BOTTLENECK CONSTRAINTS:
         mergedDietaryRestrictions.length > 0 ? mergedDietaryRestrictions.join(", ") : "None"
       } (Must satisfy EVERY participant's requirement, e.g. Halal, Vegetarian)
 
-CANDIDATE VENUES (already filtered so every one meets every member's diet requirements):
-${JSON.stringify(dietVenues, null, 2)}
+CANDIDATE VENUES (none is known to break the group's diet; "dietConfirmed" false means a diet requirement was never checked for that venue):
+${JSON.stringify(dietVenues.map((v) => ({ ...v, dietConfirmed: isConfirmed(v) })), null, 2)}
 
 DECISION RULES:
 1. Select 1 "winningRecommendation" that satisfies the lowest budget, strictest time, transport limitation, and all dietary restrictions.
-2. Select 1 to 2 "backupOptions" as second-best alternatives.
+   Prefer venues with "dietConfirmed" true; only pick one with "dietConfirmed" false when no confirmed venue fits, and say in "consensusReasoning" that its diet is unconfirmed.
+   When Halal is a group requirement, never pick a venue whose "isHalal" is "unknown" while a confirmed halal venue fits.
+2. Select 1 to 2 "backupOptions" as second-best alternatives, confirmed venues first.
 3. "priceMinMYR"-"priceMaxMYR" is a venue's usual meal price range. A venue fits the budget when priceMinMYR is within the cap;
    prefer venues whose priceMaxMYR is within it too. "totalCostPerPersonMYR" must not exceed the cap.
 4. In "consensusReasoning", write an explicit, helpful human breakdown explaining how it accommodates everyone (e.g., "Fits Student A's RM${strictBudgetCap} budget, satisfies Student B's Halal requirement, and is accessible without a car for Student C.").
@@ -297,6 +299,7 @@ Provide your response adhering strictly to the structured schema.
       })
       .sort(
         (a, b) =>
+          Number(!isConfirmed(a.v)) - Number(!isConfirmed(b.v)) ||
           budgetComfort(a.price, strictBudgetCap) - budgetComfort(b.price, strictBudgetCap) ||
           midpoint(a.price) - midpoint(b.price),
       )
@@ -327,7 +330,9 @@ Provide your response adhering strictly to the structured schema.
         totalCostPerPersonMYR: costFor(winnerVenue),
         consensusReasoning: `Accommodates ${participants.length} students (${participantNames}) under lowest budget cap RM${strictBudgetCap.toFixed(
           2
-        )}, matches ${transportBottleneck === "walk_or_public" ? "walking/campus shuttle limitation" : "vehicle access"}, and fulfills dietary preferences (${mergedDietaryRestrictions.join(", ") || "standard"}).`,
+        )}, matches ${transportBottleneck === "walk_or_public" ? "walking/campus shuttle limitation" : "vehicle access"}, and fulfills dietary preferences (${mergedDietaryRestrictions.join(", ") || "standard"}).${
+          isConfirmed(winnerVenue) ? "" : " Note: this venue's diet answers are not confirmed yet."
+        }`,
       },
       backupOptions: [
         {

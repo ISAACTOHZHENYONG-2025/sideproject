@@ -234,7 +234,7 @@ function toVenue(place: GooglePlace): ImportedVenue | null {
     priceMinMYR: price.min,
     priceMaxMYR: price.max,
     // Left unset (not checked) unless Google lists it as a halal restaurant or as serving alcohol; confirm in the venues sheet
-    isHalal: servesAlcohol(place) ? false : place.types?.includes("halal_restaurant") ? true : undefined,
+    isHalal: servesAlcohol(place) ? "non-halal" : place.types?.includes("halal_restaurant") ? "halal" : undefined,
     // Google only says the menu has some veg dishes, so this is a reference, not the vegetarian flag
     hasVegetarianOptions: place.servesVegetarianFood,
     dietaryTags,

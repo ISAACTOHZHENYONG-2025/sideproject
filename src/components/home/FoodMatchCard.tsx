@@ -13,7 +13,7 @@ export default function FoodMatchCard({ match, insightLabel }: FoodMatchCardProp
 
   return (
     <article className="bg-surface rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden flex flex-col">
-      <VenuePhoto foods={match.serves} name={match.title} preload={isTop}>
+      <VenuePhoto foods={match.serves} name={match.title} preload={isTop} venueId={match.venueId}>
         {match.distanceShort ? (
           <div className="absolute top-2.5 left-2.5 flex items-center gap-1 bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-full shadow-sm text-[11px] font-bold text-slate-800 tabular-nums">
             <MaterialIcon name="location_on" className="text-[14px] text-primary" />
@@ -38,7 +38,7 @@ export default function FoodMatchCard({ match, insightLabel }: FoodMatchCardProp
             </div>
             {match.distanceLabel ? (
               <p className="text-[11px] text-on-surface-variant flex items-center gap-1 mt-0.5 tabular-nums">
-                <MaterialIcon name="location_on" className="text-[13px] text-primary" />
+                <MaterialIcon name="location_on" className="text-[13px] text-primary shrink-0" />
                 <span>{match.distanceLabel}</span>
               </p>
             ) : null}

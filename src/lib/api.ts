@@ -2,6 +2,7 @@ import type { DecideRequestPayload, DecideResponseData } from "@/app/api/decide/
 import type { RoomInfo } from "@/app/api/group/members/route";
 import type { JoinMemberPayload } from "@/app/api/group/join/route";
 import type { GroupResolveResponse } from "@/app/api/group/resolve/route";
+import { effectiveRestrictions } from "./diet";
 import type { FilterDraft } from "./filters";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -46,6 +47,6 @@ export function toDecidePayload(filters: FilterDraft): DecideRequestPayload {
     craving: filters.craving.trim(),
     maxBudget: filters.tags.includes("Budget Meal") ? Math.min(filters.budget, 10) : filters.budget,
     maxDistanceKm: filters.maxDistanceKm,
-    dietaryRestrictions: filters.tags.filter((tag) => !NON_DIETARY_TAGS.includes(tag)),
+    dietaryRestrictions: effectiveRestrictions(filters.tags.filter((tag) => !NON_DIETARY_TAGS.includes(tag))),
   };
 }

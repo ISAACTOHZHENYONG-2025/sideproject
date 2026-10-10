@@ -4,8 +4,9 @@ import { db } from "@/lib/firebase";
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Venue } from "@/lib/types";
 import { googleMapsUrl } from "@/lib/maps";
-import { meetsDiet, type DietFields } from "@/lib/diet";
+import { assessDiet, effectiveRestrictions, normalizeVenueDiet, type DietFields } from "@/lib/diet";
 import { UM_CAMPUS_CENTER, distanceMeters, formatDistance } from "@/lib/geo";
+import { venueArea } from "@/lib/area";
 import { budgetComfort, fitsBudget, formatPriceRange, midpoint, venuePriceRange, type PriceRange } from "@/lib/price";
 
 export interface DecideRequestPayload {
@@ -19,6 +20,8 @@ export interface DecideRequestPayload {
 
 // A venue that fits the student's budget, diet and distance.
 export interface VenueMatch {
+  // Firestore doc id (the Google Place ID); names the venue's photo file. Absent for the built-in fallback venues.
+  venueId?: string;
   venueName: string;
   // Usual meal price range; equal when the venue has a single price.
   priceMinMYR: number;
@@ -36,6 +39,8 @@ export interface VenueMatch {
   rating?: number;
   // Straight-line distance from the UM campus centre; absent when the venue has no coordinates.
   distanceMeters?: number;
+  // Short neighbourhood name from the address, e.g. "SS2" or "UM"; absent when the address doesn't say.
+  area?: string;
   // Google Maps directions link; Maps works out the route from the user's location.
   mapsUrl: string;
 }
@@ -60,7 +65,7 @@ const OFF_CAMPUS_DRIVING_HOTSPOTS: Venue[] = [
     longitude: 101.62333,
     priceMinMYR: 10,
     priceMaxMYR: 16,
-    isHalal: true,
+    isHalal: "halal",
     serves: ["rice", "nasi lemak", "malay"],
     dietaryTags: ["Halal", "Famous Nasi Lemak", "Malay Cuisine", "Top Rated"],
     menuItems: [
@@ -76,7 +81,7 @@ const OFF_CAMPUS_DRIVING_HOTSPOTS: Venue[] = [
     longitude: 101.67029,
     priceMinMYR: 8,
     priceMaxMYR: 16,
-    isHalal: true,
+    isHalal: "halal",
     serves: ["rice", "biryani", "roti", "noodles", "mamak"],
     dietaryTags: ["Halal", "Mamak", "Nasi Briyani", "Indian Muslim", "Late Night"],
     menuItems: [
@@ -86,14 +91,14 @@ const OFF_CAMPUS_DRIVING_HOTSPOTS: Venue[] = [
   },
   {
     name: "The Ganga Cafe",
-    vegetarian: true,
+    vegetarian: "yes",
     location: "Lorong Kurau, Bangsar",
     placeId: "ChIJ-0H2IZtJzDEROu7FdjD33FY",
     latitude: 3.12264,
     longitude: 101.67102,
     priceMinMYR: 12,
     priceMaxMYR: 20,
-    isHalal: true,
+    isHalal: "halal",
     serves: ["indian", "vegetarian", "rice"],
     dietaryTags: ["Vegetarian", "Vegan-Friendly", "Indian Cuisine", "Healthy"],
     menuItems: [
@@ -109,7 +114,7 @@ const OFF_CAMPUS_DRIVING_HOTSPOTS: Venue[] = [
     longitude: 101.62251,
     priceMinMYR: 7,
     priceMaxMYR: 12,
-    isHalal: true,
+    isHalal: "halal",
     serves: ["rice", "nasi lemak", "noodles"],
     dietaryTags: ["Halal", "Supper Spot", "Budget-Friendly", "PJ Classic"],
     menuItems: [
@@ -128,7 +133,7 @@ const FALLBACK_CAMPUS_VENUES: Venue[] = [
     longitude: 101.66084,
     priceMinMYR: 6,
     priceMaxMYR: 10,
-    isHalal: true,
+    isHalal: "halal",
     serves: ["rice", "nasi campur"],
     dietaryTags: ["Halal", "Budget-Friendly", "Nasi Campur"],
     menuItems: [{ itemName: "Nasi Campur (Ayam Goreng + 2 Sayur)", priceMYR: 7.5 }],
@@ -138,7 +143,7 @@ const FALLBACK_CAMPUS_VENUES: Venue[] = [
     location: "Kompleks Perdanasiswa, Universiti Malaya",
     priceMinMYR: 7,
     priceMaxMYR: 12,
-    isHalal: true,
+    isHalal: "halal",
     serves: ["rice", "noodles"],
     dietaryTags: ["Halal", "Economy Rice", "Student Union"],
     menuItems: [{ itemName: "Nasi Kandar Ayam Bawang + Bendi", priceMYR: 9.5 }],
@@ -167,7 +172,8 @@ const CRAVING_ALIASES: Record<string, string[]> = {
   mamak: ["roti canai", "nasi kandar", "mee goreng mamak"],
 };
 
-type Candidate = { venue: Venue; match: VenueMatch; price: PriceRange };
+// unconfirmed: ticked diet filters nobody has checked this venue for, e.g. "Halal unconfirmed"; empty when all are confirmed
+type Candidate = { venue: Venue; match: VenueMatch; price: PriceRange; unconfirmed: string[] };
 // A ranked candidate, with the engine's reason when it gave one
 type Ranked = { candidate: Candidate; reasoning?: string };
 
@@ -257,13 +263,14 @@ function toVenueMatch(venue: Venue, price: PriceRange, budget: number): VenueMat
     : undefined;
 
   return {
+    venueId: venue.id ?? venue.placeId,
     venueName: venue.name,
     priceMinMYR: price.min,
     priceMaxMYR: price.max,
     withinBudget: budgetComfort(price, budget) === 0,
-    isHalal: venue.isHalal === true, // true only when checked; unchecked venues carry no halal claim
-    isVegetarian: venue.vegetarian === true || venue.vegan === true,
-    isVegan: venue.vegan === true,
+    isHalal: venue.isHalal === "halal", // only a confirmed halal venue carries the badge
+    isVegetarian: venue.vegetarian === "yes" || venue.vegan === "yes",
+    isVegan: venue.vegan === "yes",
     diet: {
       isHalal: venue.isHalal,
       vegetarian: venue.vegetarian,
@@ -276,6 +283,7 @@ function toVenueMatch(venue: Venue, price: PriceRange, budget: number): VenueMat
     serves: venue.serves ?? [],
     rating: venue.rating,
     distanceMeters: meters,
+    area: venueArea(venue.location),
     mapsUrl: googleMapsUrl(venue),
   };
 }
@@ -310,7 +318,7 @@ async function rankWithGemini(
   dietaryRestrictions: string[],
 ): Promise<Ranked[]> {
   // Gemini answers with these ids, so branches that share a name stay separate venues
-  const venues = candidates.map(({ venue, match }, index) => ({
+  const venues = candidates.map(({ venue, match, unconfirmed }, index) => ({
     id: `v${index + 1}`,
     name: venue.name,
     cuisine: venue.cuisine ?? null,
@@ -320,22 +328,34 @@ async function rankWithGemini(
     tags: venue.dietaryTags ?? [],
     priceRangeMYR: [match.priceMinMYR, match.priceMaxMYR],
     wholeRangeWithinBudget: match.withinBudget,
-    halal: match.isHalal,
+    // "halal" | "non-halal" | "unknown", and "yes" | "no" | "unknown" for the rest
+    halal: venue.isHalal ?? "unknown",
+    vegetarian: venue.vegan === "yes" ? "yes" : (venue.vegetarian ?? "unknown"),
+    vegan: venue.vegan ?? "unknown",
+    noSeafood: venue.noSeafoodOption ?? "unknown",
+    // True when every diet choice above is confirmed for this venue; computed in code, not a guess
+    dietConfirmed: unconfirmed.length === 0,
     rating: match.rating ?? null,
     distanceMeters: match.distanceMeters ?? null,
+    area: match.area ?? null,
   }));
 
   const prompt = `
-You pick where a Universiti Malaya student should eat. Every venue below already fits their budget,
-diet requirements and distance, so judge them only on the craving, distance, rating and price range.
+You pick where a Universiti Malaya student should eat. Every venue below already fits their budget and distance,
+and none is known to break their diet choices, so judge them on the craving, distance, rating and price range.
 
 Student:
 - Location: somewhere on the Universiti Malaya campus; distances are from the campus centre
 - Craving: ${craving || "anything (no preference)"}
 - Budget: RM${maxBudget} for one meal
-- Diet filters already applied in code (every venue below meets them): ${dietaryRestrictions.join(", ") || "none"}
+- Diet choices: ${describeDiet(dietaryRestrictions)}
 
 Rules:
+- Each venue lists its diet answers ("halal", "vegetarian", "vegan", "noSeafood") and "dietConfirmed".
+  "dietConfirmed" false means at least one of the student's diet choices has not been checked for that venue ("unknown").
+- NEVER put a venue with "dietConfirmed" false in "recommendations". Put it in "moreMatches", after every
+  venue with "dietConfirmed" true. In particular, when the student picked Halal, a venue whose "halal" is "unknown" is never a main result.
+- When the student picked Halal only, do not call a venue halal unless its "halal" is "halal". Do not infer halal from the name or tags.
 - "priceRangeMYR" is [cheapest, dearest] usual meal. Every venue's cheapest meal fits the budget. Prefer venues
   with "wholeRangeWithinBudget" true (the student can order freely), and between similar venues the lower typical price.
 - If there is a craving, only include venues that plausibly serve it (use "serves", "cuisine", "description", "menuHints", "tags" and the name;
@@ -411,6 +431,13 @@ ${JSON.stringify(venues)}
   return ranked;
 }
 
+// The student's diet choices in words for the prompt; Halal and Non-Halal together mean no halal preference.
+function describeDiet(restrictions: string[]) {
+  const picked = effectiveRestrictions(restrictions);
+  if (picked.length === 0) return "none (no halal preference either)";
+  return picked.map((r) => (r === "Halal" ? "Halal only" : r === "Non-Halal" ? "Non-halal only" : r)).join(", ");
+}
+
 // Venue list cached in memory for a minute, so busy periods don't re-read every venue on every tap.
 let venueCache: { at: number; venues: Venue[] } | undefined;
 
@@ -421,7 +448,7 @@ async function loadVenues(): Promise<Venue[]> {
     try {
       const snapshot = await getDocs(collection(db, "venues"));
       snapshot.forEach((docSnap) => {
-        venues.push({ id: docSnap.id, ...(docSnap.data() as Omit<Venue, "id">) });
+        venues.push(normalizeVenueDiet({ id: docSnap.id, ...(docSnap.data() as Omit<Venue, "id">) }));
       });
       venueCache = { at: Date.now(), venues };
     } catch (err) {
@@ -452,21 +479,28 @@ export async function POST(req: NextRequest) {
     const knownPlaceIds = new Set(venues.map((v) => v.placeId).filter(Boolean));
     venues = [...venues, ...OFF_CAMPUS_DRIVING_HOTSPOTS.filter((v) => !knownPlaceIds.has(v.placeId))];
 
-    // 2. Drop venues that can't work: no price, cheapest meal over budget, miss a ticked diet filter, or too far.
+    // 2. Drop venues that can't work: no price, cheapest meal over budget, known to break a ticked diet filter, or too far.
+    // A venue nobody has checked for a ticked filter stays, marked unconfirmed, and is kept out of the top 3 below.
     // Venues with no coordinates are the hand-seeded on-campus ones, so the distance filter keeps them.
     const candidates: Candidate[] = venues
       .flatMap((venue) => {
         const price = venuePriceRange(venue);
-        return price ? [{ venue, price, match: toVenueMatch(venue, price, maxBudget) }] : [];
+        const diet = assessDiet(venue, dietaryRestrictions);
+        return price && diet.fits
+          ? [{ venue, price, match: toVenueMatch(venue, price, maxBudget), unconfirmed: diet.unconfirmed }]
+          : [];
       })
-      .filter(({ venue, price, match }) => {
+      .filter(({ price, match }) => {
         if (!fitsBudget(price, maxBudget)) return false;
-        if (!meetsDiet(venue, dietaryRestrictions)) return false;
         return maxDistanceKm === null || match.distanceMeters === undefined || match.distanceMeters <= maxDistanceKm * 1000;
       });
 
     const respond = (engine: DecideResponseData["engine"], ranked: Ranked[]) => {
-      const { top, rest } = pickTopThree(ranked);
+      // Confirmed venues keep their order and come first; unconfirmed ones follow, only ever in moreMatches.
+      const confirmed = ranked.filter((r) => r.candidate.unconfirmed.length === 0);
+      const unconfirmed = ranked.filter((r) => r.candidate.unconfirmed.length > 0);
+      const { top, rest: confirmedRest } = pickTopThree(confirmed);
+      const rest = [...confirmedRest, ...unconfirmed];
       return NextResponse.json<DecideResponseData>(
         {
           recommendations: top.map(({ candidate, reasoning }) => ({
@@ -497,10 +531,13 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
     if (apiKey) {
       try {
-        // Send Gemini the 40 most promising venues (keyword matches first, then nearest); the rest follow
-        // in code order. With a craving, only keyword matches are added back, as Gemini would have dropped the rest.
+        // Send Gemini the 40 most promising venues (keyword matches first, then confirmed diet, then nearest); the
+        // rest follow in code order. With a craving, only keyword matches are added back, as Gemini would have dropped the rest.
         const ordered = [...candidates].sort(
-          (a, b) => Number(matchesCraving(b)) - Number(matchesCraving(a)) || rankByDistanceAndRating(a, b),
+          (a, b) =>
+            Number(matchesCraving(b)) - Number(matchesCraving(a)) ||
+            Number(a.unconfirmed.length > 0) - Number(b.unconfirmed.length > 0) ||
+            rankByDistanceAndRating(a, b),
         );
         const overflow = ordered.slice(GEMINI_CANDIDATE_CAP).filter(matchesCraving);
         const ranked = await rankWithGemini(apiKey, ordered.slice(0, GEMINI_CANDIDATE_CAP), craving, maxBudget, dietaryRestrictions);

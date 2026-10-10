@@ -1,7 +1,15 @@
 "use client";
 
 import MaterialIcon from "@/components/ui/MaterialIcon";
-import { BUDGET_RANGE, DEFAULT_FILTERS, DIET_TAGS, DISTANCE_OPTIONS, type FilterDraft } from "@/lib/filters";
+import {
+  BUDGET_RANGE,
+  DEFAULT_FILTERS,
+  DIET_TOGGLES,
+  DISTANCE_OPTIONS,
+  HALAL_OPTIONS,
+  PREFERENCE_TAGS,
+  type FilterDraft,
+} from "@/lib/filters";
 
 type FilterBottomSheetProps = {
   open: boolean;
@@ -26,6 +34,31 @@ export default function FilterBottomSheet({
   onClose,
   onApply,
 }: FilterBottomSheetProps) {
+  const renderTag = ({ id, label }: { id: string; label: string }) => {
+    const active = draft.tags.includes(id);
+    return (
+      <button
+        aria-pressed={active}
+        className={`flex items-center gap-1 px-3 h-9 rounded-full text-xs transition-all active:scale-95 ${
+          active
+            ? "font-bold bg-[#E6F7ED] text-primary border-[1.5px] border-primary"
+            : "font-semibold bg-surface-container-lowest text-[#1E2329] border border-[#E9ECEF] hover:bg-[#F1F3F5]"
+        }`}
+        key={id}
+        onClick={() =>
+          onChange({
+            ...draft,
+            tags: active ? draft.tags.filter((item) => item !== id) : [...draft.tags, id],
+          })
+        }
+        type="button"
+      >
+        {active ? <MaterialIcon name="check" className="text-[15px]" /> : null}
+        {label}
+      </button>
+    );
+  };
+
   return (
     <>
       <button
@@ -156,39 +189,22 @@ export default function FilterBottomSheet({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold text-on-surface flex items-center gap-1.5">
-                <MaterialIcon name="verified" className="text-primary text-[17px]" />
-                Dietary &amp; Preference Tags
-              </p>
-              <span className="text-[11px] text-[#6C757D]">Multi-select</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {DIET_TAGS.map(({ id, label }) => {
-                const active = draft.tags.includes(id);
-                return (
-                  <button
-                    aria-pressed={active}
-                    className={`flex items-center gap-1 px-3 h-9 rounded-full text-xs transition-all active:scale-95 ${
-                      active
-                        ? "font-bold bg-[#E6F7ED] text-primary border-[1.5px] border-primary"
-                        : "font-semibold bg-surface-container-lowest text-[#1E2329] border border-[#E9ECEF] hover:bg-[#F1F3F5]"
-                    }`}
-                    key={id}
-                    onClick={() =>
-                      onChange({
-                        ...draft,
-                        tags: active ? draft.tags.filter((item) => item !== id) : [...draft.tags, id],
-                      })
-                    }
-                    type="button"
-                  >
-                    {active ? <MaterialIcon name="check" className="text-[15px]" /> : null}
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
+            <p className="text-xs font-bold text-on-surface mb-2 flex items-center gap-1.5">
+              <MaterialIcon name="verified" className="text-primary text-[17px]" />
+              Halal
+            </p>
+            <div className="flex flex-wrap gap-2">{HALAL_OPTIONS.map(renderTag)}</div>
+            <p className="text-[11px] text-[#6C757D] mt-1.5 px-1">
+              Pick one, both or neither. Both or neither shows everything. Venues still to be checked appear under See more.
+            </p>
+          </div>
+
+          <div>
+            <p className="text-xs font-bold text-on-surface mb-2 flex items-center gap-1.5">
+              <MaterialIcon name="eco" className="text-primary text-[17px]" />
+              Dietary &amp; Preference Tags
+            </p>
+            <div className="flex flex-wrap gap-2">{[...DIET_TOGGLES, ...PREFERENCE_TAGS].map(renderTag)}</div>
           </div>
         </div>
 

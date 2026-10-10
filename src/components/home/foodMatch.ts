@@ -4,6 +4,8 @@ import { formatPriceRange } from "@/lib/price";
 
 export type FoodMatch = {
   id: string;
+  // The venue's Firestore doc id, which names its photo; absent for the built-in fallback venues
+  venueId?: string;
   rank: number;
   title: string;
   // e.g. "RM12-25"
@@ -15,7 +17,7 @@ export type FoodMatch = {
   isVegetarian: boolean;
   isVegan: boolean;
   allergyNotes?: string;
-  // e.g. "650 m from campus centre"; absent when the venue has no coordinates
+  // e.g. "SS2 · 3.4 km from campus centre"; absent when the venue has neither an area nor coordinates
   distanceLabel?: string;
   // e.g. "650 m", for the card badge
   distanceShort?: string;
@@ -24,10 +26,11 @@ export type FoodMatch = {
   mapsUrl: string;
 };
 
+// The venue's area, then its distance: "SS2 · 3.4 km from campus centre", or either one alone.
 export function distanceLabel(match: VenueMatch) {
-  return match.distanceMeters === undefined
-    ? undefined
-    : `${formatDistance(match.distanceMeters)} from campus centre`;
+  const distance =
+    match.distanceMeters === undefined ? undefined : `${formatDistance(match.distanceMeters)} from campus centre`;
+  return [match.area, distance].filter(Boolean).join(" · ") || undefined;
 }
 
 export function priceLabel(match: VenueMatch) {
@@ -37,6 +40,7 @@ export function priceLabel(match: VenueMatch) {
 export function fromRecommendation(rec: RecommendationItem, index: number, budget: number): FoodMatch {
   return {
     id: `${index}-${rec.venueName}`,
+    venueId: rec.venueId,
     rank: index + 1,
     title: rec.venueName,
     price: priceLabel(rec),

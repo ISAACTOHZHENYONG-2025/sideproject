@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { DecideResponseData, RecommendationItem, VenueMatch } from "@/app/api/decide/route";
 import BottomNav from "@/components/BottomNav";
 import { decide, toDecidePayload } from "@/lib/api";
-import { meetsDiet } from "@/lib/diet";
+import { assessDiet } from "@/lib/diet";
 import type { FilterDraft } from "@/lib/filters";
 import FilterBottomSheet from "./FilterBottomSheet";
 import FoodMatchCard from "./FoodMatchCard";
@@ -88,10 +88,19 @@ export default function HomePage({ initialFilters }: HomePageProps) {
   const dietFilter = toDecidePayload(applied).dietaryRestrictions;
   // The budget the server used, which "Budget Meal" caps at RM10
   const fetchedBudget = fetchedFor ? toDecidePayload(fetchedFor).maxBudget : 0;
-  const matches = recommendations
-    .filter((rec) => meetsDiet(rec.diet, dietFilter))
-    .map((rec, index) => fromRecommendation(rec, index, fetchedBudget));
-  const moreMatches = fetchedMoreMatches.filter((match) => meetsDiet(match.diet, dietFilter));
+  // Venues known to break a ticked filter are hidden. Venues nobody has checked for one stay, but only under
+  // See more with a label, after the confirmed ones. Only confirmed venues become top matches.
+  const assess = <T extends VenueMatch>(items: T[]) =>
+    items.map((item) => ({ item, ...assessDiet(item.diet, dietFilter) })).filter((entry) => entry.fits);
+  const assessedTop = assess(recommendations);
+  const assessedMore = assess(fetchedMoreMatches);
+  const matches = assessedTop
+    .filter((entry) => entry.unconfirmed.length === 0)
+    .map((entry, index) => fromRecommendation(entry.item, index, fetchedBudget));
+  const moreMatches = [
+    ...assessedMore.filter((entry) => entry.unconfirmed.length === 0),
+    ...[...assessedTop, ...assessedMore].filter((entry) => entry.unconfirmed.length > 0),
+  ].map(({ item, unconfirmed }) => ({ match: item as VenueMatch, unconfirmed }));
 
   const applyFilters = () => {
     setApplied(draft);
@@ -155,6 +164,15 @@ export default function HomePage({ initialFilters }: HomePageProps) {
             </div>
           ) : null}
 
+          {status === "ready" && matches.length === 0 && moreMatches.length > 0 ? (
+            <div className="rounded-2xl border border-[#E9ECEF] bg-surface-container-lowest p-4 text-center">
+              <p className="text-sm font-bold">No confirmed matches</p>
+              <p className="text-xs text-on-surface-variant mt-1">
+                Nothing here is confirmed for your diet choices yet. See more shows venues still to be checked.
+              </p>
+            </div>
+          ) : null}
+
           {status === "ready" && matches.length === 0 && moreMatches.length === 0 ? (
             <div className="rounded-2xl border border-[#E9ECEF] bg-surface-container-lowest p-4 text-center">
               <p className="text-sm font-bold">No matches for these filters</p>
@@ -185,7 +203,7 @@ export default function HomePage({ initialFilters }: HomePageProps) {
               </button>
             ) : null}
 
-            {showMore ? <MoreMatchesList matches={moreMatches} /> : null}
+            {showMore ? <MoreMatchesList items={moreMatches} /> : null}
           </div>
         </main>
 

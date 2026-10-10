@@ -6,6 +6,7 @@
 import * as fs from "fs";
 import { collection, getDocs } from "firebase/firestore";
 import type { Venue } from "../src/lib/types";
+import { normalizeVenueDiet } from "../src/lib/diet";
 import { googleMapsUrl } from "../src/lib/maps";
 import { formatPriceRange, venuePriceRange } from "../src/lib/price";
 import { BOM, SHEET_COLUMNS, toCsv } from "./csv";
@@ -18,6 +19,8 @@ function priceCell(v: Venue) {
 }
 
 const yesNo = (value: boolean | undefined) => (value === undefined ? "" : value ? "Y" : "N");
+// halal, vegetarian, vegan and noSeafood are written as words; a venue nobody has checked says "unknown"
+const word = (value: string | undefined) => value ?? "unknown";
 
 runScript(async () => {
   const fileArg = process.argv.find((a) => a.startsWith("--file="));
@@ -25,18 +28,18 @@ runScript(async () => {
 
   const db = connectFirestore();
   const venues = (await getDocs(collection(db, "venues"))).docs
-    .map((d) => ({ ...(d.data() as Venue), id: d.id }))
+    // Docs not re-imported since the three-word answers still hold true/false; read them as words
+    .map((d) => normalizeVenueDiet({ ...(d.data() as Venue), id: d.id }))
     .sort((a, b) => (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity) || a.name.localeCompare(b.name));
 
   const rows = venues.map((v) => [
     v.id,
     v.name,
-    yesNo(v.isHalal),
-    // Blank means nobody has checked yet
-    yesNo(v.vegetarian),
+    word(v.isHalal),
+    word(v.vegetarian),
     yesNo(v.hasVegetarianOptions),
-    yesNo(v.vegan),
-    yesNo(v.noSeafoodOption),
+    word(v.vegan),
+    word(v.noSeafoodOption),
     yesNo(v.nonHalal),
     yesNo(v.noBeefOption),
     priceCell(v),
@@ -58,5 +61,5 @@ runScript(async () => {
   // The BOM makes Excel open the file as UTF-8 so names with accents survive.
   fs.writeFileSync(file, BOM + toCsv([[...SHEET_COLUMNS], ...rows]), "utf-8");
   console.log(`Wrote ${venues.length} venue(s) to ${file}.`);
-  console.log("Fill in halal, vegetarian, vegan, noSeafood, nonHalal, noBeef (Y/N), priceMYR (a range, e.g. 12-25), serves (e.g. \"rice, noodles\") and allergyNotes, then run: npm run db:import-sheet -- --dry-run");
+  console.log("Fill in halal (halal / non-halal / unknown), vegetarian, vegan, noSeafood (yes / no / unknown), nonHalal, noBeef (Y/N), priceMYR (a range, e.g. 12-25), serves (e.g. \"rice, noodles\") and allergyNotes, then run: npm run db:import-sheet -- --dry-run");
 });

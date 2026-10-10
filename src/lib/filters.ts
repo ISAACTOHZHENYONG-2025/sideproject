@@ -22,15 +22,21 @@ export const DISTANCE_OPTIONS: { km: number | null; param: string; label: string
   { km: null, param: "any", label: "Any" },
 ];
 
-export const DIET_TAGS = [
-  { id: "Halal", label: "Halal (JAKIM)" },
-  { id: "Vegetarian", label: "Vegetarian" },
-  { id: "Vegan", label: "Vegan" },
-  { id: "No Seafood", label: "No Seafood" },
-  { id: "Non-Halal", label: "Non-Halal" },
-  { id: "No Beef", label: "No Beef" },
-  { id: "Budget Meal", label: "Budget Meal < RM10" },
+// Pick one, both or neither; both and neither both mean "either".
+export const HALAL_OPTIONS = [
+  { id: "Halal", label: "Halal" },
+  { id: "Non-Halal", label: "Non-halal" },
 ];
+
+export const DIET_TOGGLES = [
+  { id: "Vegetarian", label: "Vegetarian" },
+  { id: "No Seafood", label: "No Seafood" },
+];
+
+// A price preference, not a diet
+export const PREFERENCE_TAGS = [{ id: "Budget Meal", label: "Budget Meal < RM10" }];
+
+export const DIET_TAGS = [...HALAL_OPTIONS, ...DIET_TOGGLES, ...PREFERENCE_TAGS];
 
 // Filters travel from /filter to / in the URL so the home page can fetch with them.
 export function filtersToSearchParams(filters: FilterDraft): URLSearchParams {

@@ -13,7 +13,9 @@ import {
   deleteField,
   type FieldValue,
 } from "firebase/firestore";
+import { normalizeVenueDiet } from "../src/lib/diet";
 import { formatPriceRange, parsePriceRange, venuePriceRange } from "../src/lib/price";
+import type { HalalStatus, Venue } from "../src/lib/types";
 
 const MAX_PRICE_MYR = 200;
 
@@ -77,7 +79,7 @@ interface VenueDoc {
   location: string;
   priceMinMYR?: number;
   priceMaxMYR?: number;
-  isHalal: boolean;
+  isHalal: HalalStatus;
   dietaryTags: string[];
   menuItems: { itemName: string; priceMYR: number }[];
 }
@@ -93,7 +95,7 @@ async function listVenues(): Promise<VenueDoc[]> {
       name: data.name || "Unnamed",
       location: data.location || "Unknown",
       ...venuePriceFields(data),
-      isHalal: Boolean(data.isHalal),
+      isHalal: normalizeVenueDiet(data as Venue).isHalal ?? "unknown",
       dietaryTags: Array.isArray(data.dietaryTags) ? data.dietaryTags : [],
       menuItems: Array.isArray(data.menuItems) ? data.menuItems : [],
     });
@@ -117,7 +119,7 @@ async function handleViewAll() {
     console.log(`    ID:             ${v.id}`);
     console.log(`    Location:       ${v.location}`);
     console.log(`    Price Range:    ${v.priceMinMYR === undefined ? "None" : `RM${formatPriceRange({ min: v.priceMinMYR, max: v.priceMaxMYR! })}`}`);
-    console.log(`    Halal:          ${v.isHalal ? "Yes ✅" : "No ❌"}`);
+    console.log(`    Halal:          ${v.isHalal === "halal" ? "Yes ✅" : v.isHalal === "non-halal" ? "No ❌" : "Unknown ❔"}`);
     console.log(`    Tags:           ${v.dietaryTags.join(", ") || "None"}`);
     if (v.menuItems.length > 0) {
       console.log(`    Menu (${v.menuItems.length} items):`);
@@ -138,12 +140,12 @@ async function handleAdd() {
   }
   const location = await ask("Location (e.g. 2nd Residential College): ");
   const priceStr = await ask("Price range in MYR (e.g. 8-15): ");
-  const halalStr = await ask("Is it Halal? (y/n, default y): ");
+  const halalStr = await ask("Is it Halal? (y/n, Enter for unknown): ");
   const tagsStr = await ask("Dietary tags (comma-separated, e.g. Halal, Budget, Noodles): ");
 
   const parsedPrice = parsePriceRange(priceStr, MAX_PRICE_MYR);
   const price = parsedPrice instanceof Error || !parsedPrice ? { min: 8, max: 15 } : parsedPrice;
-  const isHalal = halalStr.toLowerCase() !== "n";
+  const isHalal: HalalStatus = ["y", "yes"].includes(halalStr.toLowerCase()) ? "halal" : ["n", "no"].includes(halalStr.toLowerCase()) ? "non-halal" : "unknown";
   const dietaryTags = tagsStr
     ? tagsStr.split(",").map((t) => t.trim()).filter(Boolean)
     : ["Campus Dining"];
@@ -197,7 +199,7 @@ async function handleEdit() {
   const location = await ask(`New Location [${target.location}]: `);
   const currentPrice = target.priceMinMYR === undefined ? "none" : formatPriceRange({ min: target.priceMinMYR, max: target.priceMaxMYR! });
   const priceStr = await ask(`New Price Range, e.g. 8-15 [${currentPrice}]: `);
-  const halalStr = await ask(`Is Halal? (y/n) [${target.isHalal ? "y" : "n"}]: `);
+  const halalStr = await ask(`Is Halal? (y/n/unknown) [${target.isHalal}]: `);
 
   const updates: Partial<Omit<VenueDoc, "id">> & { avgPriceMYR?: FieldValue } = {};
   if (name) updates.name = name;
@@ -209,7 +211,10 @@ async function handleEdit() {
     updates.priceMaxMYR = newPrice.max;
     updates.avgPriceMYR = deleteField(); // replaced by the range
   }
-  if (halalStr) updates.isHalal = halalStr.toLowerCase() === "y";
+  if (halalStr) {
+    const answer = halalStr.toLowerCase();
+    updates.isHalal = ["y", "yes"].includes(answer) ? "halal" : ["n", "no"].includes(answer) ? "non-halal" : "unknown";
+  }
 
   if (Object.keys(updates).length === 0) {
     console.log("No changes made.");

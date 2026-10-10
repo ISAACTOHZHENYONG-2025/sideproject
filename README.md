@@ -36,10 +36,13 @@ The app still works without `GEMINI_API_KEY`. `/api/decide` falls back to code-o
 - **`/`**: the home feed, with the top recommendations and a list of more matches.
 - **`/filter`**: the filter sheet (craving, budget, distance, diet). Diet and other simple toggles
   filter the cached cards on the client right away. Budget and distance changes mark the results
-  stale until the user asks for an update.
+  stale until the user asks for an update. Halal and Non-halal can be picked one, both or neither
+  (both or neither means no halal preference).
 - **`POST /api/decide`**: loads venues from Firestore plus a few hard-coded off-campus spots, filters
   them by budget, diet and straight-line distance from the UM campus centre, then asks Gemini to rank
-  the candidates and explain each pick.
+  the candidates and explain each pick. A venue known to break a ticked diet filter is dropped. A venue
+  nobody has checked (`unknown`) is kept, but only under See more with an "unconfirmed" label, after the
+  confirmed ones; the top 3 are always confirmed.
 
 Code layout:
 
@@ -61,7 +64,7 @@ Venues live in the Firestore `venues` collection. Every script reads its keys fr
 | --- | --- |
 | `npm run db:import-nearby` | Imports food places around UM from Google Places. Supports `--area=<um, bangsar, ss2, taman-paramount or sec17>`, `--min-reviews=<n>`, `--dry-run`, `--extent=<metres>`, `--max-calls=<n>`, `--resume` and `--use-cache`. Safe to re-run: places are keyed by Google place ID and near-duplicates are skipped. |
 | `npm run db:export-sheet` | Writes every venue to `venues.csv` so halal, diet flags, price, foods and allergy notes can be filled in by hand. |
-| `npm run db:import-sheet` | Reads the edited `venues.csv` back into Firestore. Use `--dry-run` first. Blank cells leave a field unchanged. |
+| `npm run db:import-sheet` | Reads the edited `venues.csv` back into Firestore. Use `--dry-run` first. Blank cells leave a field unchanged. `halal` is `halal`, `non-halal` or `unknown`; `vegetarian`, `vegan` and `noSeafood` are `yes`, `no` or `unknown` (the old `Y` / `N` still load). |
 | `npm run db:cli` | Interactive terminal tool to view, add, edit and delete venues. |
 
 The usual loop is import nearby → export sheet → edit in Google Sheets or Excel → import sheet.

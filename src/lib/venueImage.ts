@@ -1,20 +1,18 @@
-// Venue photos are static files kept in `public/venues/`, named after the venue's slug
-// (e.g. "He & She Coffee" -> `/venues/he-and-she-coffee.jpg`). Nothing in the venue data
-// points at them: the name is the key, so adding a photo is just dropping in a file.
-// `npm run venues:photos` prints the exact filename wanted for every venue in the sheet.
+// Venue photos are static files kept in `public/venues/`, named after the venue's id (the Google
+// Place ID, which is also the Firestore doc id), e.g. `/venues/ChIJlzIJRXpJzDERvkxxxoAitks.jpg`.
+// Nothing in the venue data points at them: the id is the key, so adding a photo is just dropping
+// in a file. In `npm run dev` each card has an "Upload photo" button that writes the file for you;
+// `npm run venues:photos` prints the filename wanted for every venue in the sheet.
 
-export function venueSlug(name: string): string {
-  return name
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+// Letters, digits, "-" and "_" only: what a Place ID is made of, and nothing that could escape `public/venues/`.
+const VENUE_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+
+export function isValidVenueId(id: string): boolean {
+  return VENUE_ID_PATTERN.test(id);
 }
 
-export function venuePhotoPath(name: string): string {
-  return `/venues/${venueSlug(name)}.jpg`;
+export function venuePhotoPath(venueId: string): string {
+  return `/venues/${venueId}.jpg`;
 }
 
 // Tailwind gradient pairs for the tile shown while a photo loads, and in place of one that
