@@ -9,7 +9,8 @@ import type { Venue } from "../src/lib/types";
 import { normalizeVenueDiet } from "../src/lib/diet";
 import { googleMapsUrl } from "../src/lib/maps";
 import { formatPriceRange, venuePriceRange } from "../src/lib/price";
-import { BOM, SHEET_COLUMNS, toCsv } from "./csv";
+import { venueArea } from "../src/lib/area";
+import { BOM, SHEET_COLUMNS, sortByArea, toCsv } from "./csv";
 import { connectFirestore, runScript } from "./firestore";
 
 // "12-25"; blank when the venue has no price
@@ -27,14 +28,17 @@ runScript(async () => {
   const file = fileArg ? fileArg.split("=")[1] : "venues.csv";
 
   const db = connectFirestore();
-  const venues = (await getDocs(collection(db, "venues"))).docs
-    // Docs not re-imported since the three-word answers still hold true/false; read them as words
-    .map((d) => normalizeVenueDiet({ ...(d.data() as Venue), id: d.id }))
-    .sort((a, b) => (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity) || a.name.localeCompare(b.name));
+  const venues = sortByArea(
+    (await getDocs(collection(db, "venues"))).docs
+      // Docs not re-imported since the three-word answers still hold true/false; read them as words
+      .map((d) => normalizeVenueDiet({ ...(d.data() as Venue), id: d.id }))
+      .map((v) => ({ ...v, area: venueArea(v.location) ?? "", distance: v.distanceMeters ?? Infinity })),
+  );
 
   const rows = venues.map((v) => [
     v.id,
     v.name,
+    v.area,
     word(v.isHalal),
     word(v.vegetarian),
     yesNo(v.hasVegetarianOptions),

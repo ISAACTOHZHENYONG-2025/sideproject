@@ -73,8 +73,11 @@ next day.
 
 ## Venue photos
 
-Cards look for a JPEG in `public/venues/`, named after the venue's slug (for example,
-"He & She Coffee" becomes `he-and-she-coffee.jpg`). Run `npm run venues:photos` for the list of
+Cards look for a JPEG in `public/venues/`, named after the venue's id, which is its Google Place ID (for example,
+`ChIJlzIJRXpJzDERvkxxxoAitks.jpg`). In `npm run dev` every top-3 card has an **Upload photo** button
+that resizes the picked JPG, PNG or WebP to 1024px wide and saves it there under the right name; the
+button and its `/api/dev/venue-photo` route return 404 or do not render outside development. Commit
+the new files with `git add public/venues`, then redeploy. Run `npm run venues:photos` for the list of
 wanted filenames and what is still missing (`npm run venues:photos -- todo` lists only the gaps). It
 reads `venues.csv`, so run `db:export-sheet` first. A venue with no photo falls back to a
 cuisine-coloured tile, so the list can be worked through in any order. 16:9 crops look best.

@@ -58,7 +58,7 @@ const decideCases = [
   { label: "within 1 km", craving: "", maxBudget: 15, maxDistanceKm: 1, dietaryRestrictions: ["Halal"] },
   { label: "any distance", craving: "", maxBudget: 30, maxDistanceKm: null, dietaryRestrictions: [] },
   { label: "vegetarian", craving: "", maxBudget: 30, maxDistanceKm: null, dietaryRestrictions: ["Vegetarian"] },
-  { label: "vegan + no seafood", craving: "", maxBudget: 30, maxDistanceKm: null, dietaryRestrictions: ["Vegan", "No Seafood"] },
+  { label: "vegetarian + no seafood", craving: "", maxBudget: 30, maxDistanceKm: null, dietaryRestrictions: ["Vegetarian", "No Seafood"] },
   { label: "noodles, RM10, halal", craving: "noodles", maxBudget: 10, maxDistanceKm: 3, dietaryRestrictions: ["Halal"] },
   { label: "accented craving", craving: "café", maxBudget: 30, maxDistanceKm: 3, dietaryRestrictions: [] },
   { label: "non-Latin craving", craving: "面", maxBudget: 30, maxDistanceKm: 3, dietaryRestrictions: [] },
@@ -81,8 +81,16 @@ for (const { label, ...payload } of decideCases) {
     if (payload.maxDistanceKm !== null) {
       report(`  all within ${payload.maxDistanceKm} km (${label})`, all.every((r) => r.distanceMeters === undefined || r.distanceMeters <= payload.maxDistanceKm * 1000));
     }
-    if (payload.dietaryRestrictions.includes("Vegetarian")) report(`  all vegetarian (${label})`, all.every((r) => r.isVegetarian));
-    if (payload.dietaryRestrictions.includes("Vegan")) report(`  all vegan (${label})`, all.every((r) => r.isVegan));
+    // A venue nobody has checked is kept, but only under See more: the top picks must be confirmed, and no
+    // venue known to break a ticked filter may appear at all.
+    if (payload.dietaryRestrictions.includes("Vegetarian")) {
+      report(`  top picks all vegetarian (${label})`, recs.every((r) => r.isVegetarian));
+      report(`  none known non-vegetarian (${label})`, all.every((r) => r.diet.vegetarian !== "no" || r.diet.vegan === "yes"));
+    }
+    if (payload.dietaryRestrictions.includes("No Seafood")) {
+      report(`  top picks all seafood-free (${label})`, recs.every((r) => r.diet.noSeafoodOption === "yes"));
+      report(`  none known to serve seafood (${label})`, all.every((r) => r.diet.noSeafoodOption !== "no"));
+    }
     report(`  all have a Maps link (${label})`, all.every((r) => /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&/.test(r.mapsUrl)));
   }
 }
