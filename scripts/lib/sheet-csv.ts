@@ -1,7 +1,7 @@
 // Byte-order mark: makes Excel read the file as UTF-8.
 export const BOM = String.fromCharCode(0xfeff);
 
-// halal (halal / non-halal / unknown), vegetarian, vegan, noSeafood (yes / no / unknown), nonHalal, noBeef (Y/N; noBeef is kept for a later filter), priceMYR (a price range such as "12-25"; a single number means min = max), serves, allergyNotes and researchNotes are the columns to fill in; db:import-sheet reads columns by name and ignores the rest. googleVegOptions is read-only: Google says the menu has some veg dishes, a hint for filling in vegetarian. area is read-only too: it is worked out from the address, and rows are grouped by it.
+// halal (halal / non-halal / unknown), vegetarian, vegan, noSeafood (yes / no / unknown), nonHalal, noBeef (Y/N; noBeef is kept for a later filter), priceMYR (a price range such as "12-25"; a single number means min = max), serves, cuisine, allergyNotes and researchNotes are the columns to fill in; db:import-sheet reads columns by name and ignores the rest. Search reads name, cuisine and serves, so serves lists the dishes a venue is known for ("bak kut teh", "chicken rice") and cuisine starts as Google's label, corrected here when wrong. googleVegOptions is read-only: Google says the menu has some veg dishes, a hint for filling in vegetarian. area is read-only too: it is worked out from the address, and rows are grouped by it.
 export const SHEET_COLUMNS = [
   "id",
   "name",

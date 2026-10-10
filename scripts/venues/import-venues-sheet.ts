@@ -1,4 +1,5 @@
-// Reads venues.csv (from db:export-sheet) and updates each venue's halal, diet flags, price range, food types, allergy notes and research notes by id.
+// Reads venues.csv (from db:export-sheet) and updates each venue's halal, diet flags, price range, food types, cuisine, allergy notes and research notes by id.
+// cuisine starts as Google's label; correct it here when Google is wrong (a Chinese mixed-rice shop called "Korean Restaurant"). Search reads it.
 // halal is halal / non-halal / unknown; vegetarian, vegan and noSeafood are yes / no / unknown. The old Y / N still load (Y = halal or yes).
 // priceMYR holds a range like "12-25"; a single "15" sets min and max to 15.
 //   npm run db:import-sheet -- --dry-run   # show what would change, write nothing
@@ -32,11 +33,13 @@ type Update = Partial<
     | "priceMaxMYR"
     | "serves"
     | "menuItems"
+    | "cuisine"
   >
 > & { avgPriceMYR?: FieldValue };
 
 const MAX_ALLERGY_NOTE_LENGTH = 200;
 const MAX_RESEARCH_NOTE_LENGTH = 1000;
+const MAX_CUISINE_LENGTH = 60;
 
 function parseYesNo(column: string, value: string): boolean | undefined | Error {
   const v = value.trim().toLowerCase();
@@ -134,8 +137,10 @@ runScript(async () => {
     const note = parseNote("allergyNotes", cell("allergynotes"), MAX_ALLERGY_NOTE_LENGTH);
     // Optional column: sheets exported before it existed leave research notes alone.
     const research = parseNote("researchNotes", cell("researchnotes"), MAX_RESEARCH_NOTE_LENGTH);
+    // Optional column: sheets exported before it was editable still carry Google's label, so nothing changes.
+    const cuisine = parseNote("cuisine", cell("cuisine"), MAX_CUISINE_LENGTH);
     const price = parsePriceRange(cell("pricemyr"), MAX_PRICE_MYR);
-    const problems = [halal, vegetarian, vegan, noSeafood, nonHalal, noBeef, note, research, price].filter(
+    const problems = [halal, vegetarian, vegan, noSeafood, nonHalal, noBeef, note, research, cuisine, price].filter(
       (v): v is Error => v instanceof Error,
     );
     if (problems.length > 0) {
@@ -183,6 +188,10 @@ runScript(async () => {
     if (typeof research === "string" && research !== venue.researchNotes) {
       data.researchNotes = research;
       changes.push(venue.researchNotes ? "researchNotes edited" : "researchNotes added");
+    }
+    if (typeof cuisine === "string" && cuisine !== venue.cuisine) {
+      data.cuisine = cuisine;
+      changes.push(`cuisine "${venue.cuisine ?? ""}" -> "${cuisine}"`);
     }
     if (price && !(price instanceof Error) && (price.min !== venue.priceMinMYR || price.max !== venue.priceMaxMYR || venue.avgPriceMYR !== undefined)) {
       data.priceMinMYR = price.min;

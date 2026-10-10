@@ -205,9 +205,11 @@ type Candidate = {
   exact: number;
 };
 
-// First words that don't identify a chain, so "Kafe Sains" and "Kafe Bahasa" stay separate places.
+// First words that don't identify a chain, so "Kafe Sains" and "Kafe Bahasa" stay separate places, and so do
+// "SS2 Rising Kopitiam" and "SS2 Durian Glasshause".
 const GENERIC_FIRST_WORDS = new Set([
   "kafe", "cafe", "restoran", "restaurant", "kedai", "warung", "the", "nasi", "gerai", "medan", "food",
+  "ss2", "seksyen", "section", "pj",
 ]);
 
 // Branches of one chain share a key: "KFC Jalan Universiti DT" and "KFC Gateway Mall" are both "kfc".
@@ -223,8 +225,9 @@ function chainKey(name: string) {
 
 const nearness = (c: Candidate) => c.match.distanceMeters ?? UNKNOWN_DISTANCE_M;
 
-// Top 3 holds at most one branch per chain, always that chain's nearest branch in the list;
-// every other candidate, other branches included, keeps its order in moreMatches.
+// Top 3 holds at most one branch per chain: the nearest of that chain's branches that match the search as well as
+// its best one, so a nearer branch never brings in a weaker match. Every other candidate, other branches included,
+// keeps its order in moreMatches.
 function pickTopThree(ranked: Candidate[]): { top: Candidate[]; rest: Candidate[] } {
   const top: Candidate[] = [];
   const used = new Set<Candidate>();
@@ -235,7 +238,13 @@ function pickTopThree(ranked: Candidate[]): { top: Candidate[]; rest: Candidate[
     if (seenChains.has(key)) continue;
     seenChains.add(key);
     const nearest = ranked
-      .filter((c) => !used.has(c) && chainKey(c.venue.name) === key)
+      .filter(
+        (c) =>
+          !used.has(c) &&
+          chainKey(c.venue.name) === key &&
+          c.hits.length === entry.hits.length &&
+          c.exact === entry.exact,
+      )
       .reduce((a, b) => (nearness(b) < nearness(a) ? b : a));
     used.add(nearest);
     top.push(nearest);

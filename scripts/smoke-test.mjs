@@ -69,8 +69,11 @@ const decideCases = [
   { label: "area only, halal", craving: "ss2", maxBudget: 30, maxDistanceKm: 1, dietaryRestrictions: ["Halal"], skipAi: true, expectAreas: ["SS2"] },
   { label: "brand", craving: "zus", maxBudget: 30, maxDistanceKm: null, dietaryRestrictions: [], expectName: /zus/i },
   { label: "misspelt dish, AI", craving: "bakuteh", maxBudget: 40, maxDistanceKm: null, dietaryRestrictions: [], expectName: /bak kut teh|bah kut teh|肉骨茶/i },
+  // Filler words drop out of code's reading ("thai food" is "thai"); a known dish stays one phrase.
+  { label: "filler words, code", craving: "vietnam cuisine", maxBudget: 30, maxDistanceKm: null, dietaryRestrictions: [], skipAi: true, expectLabels: ["vietnam"] },
+  { label: "known dish, code", craving: "wantan mee", maxBudget: 30, maxDistanceKm: null, dietaryRestrictions: [], skipAi: true, expectLabels: ["wantan mee"] },
 ];
-for (const { label, expectAreas, expectName, ...payload } of decideCases) {
+for (const { label, expectAreas, expectName, expectLabels, ...payload } of decideCases) {
   const { status, data } = await post("/api/decide", payload);
   const recs = data.recommendations;
   const more = data.moreMatches;
@@ -97,6 +100,10 @@ for (const { label, expectAreas, expectName, ...payload } of decideCases) {
     }
     // A dish can match through serves or the menu too, so only some top pick need carry it in the name
     if (expectName) report(`  a top pick named ${expectName} (${label})`, recs.some((r) => expectName.test(r.venueName)));
+    if (expectLabels) {
+      report(`  read as ${expectLabels} (${label})`, query?.groups.map((g) => g.label).join("|") === expectLabels.join("|"));
+      report(`  found some (${label})`, all.length > 0);
+    }
     if (payload.dietaryRestrictions.includes("Halal")) {
       report(`  top picks all halal (${label})`, recs.every((r) => r.isHalal));
     }

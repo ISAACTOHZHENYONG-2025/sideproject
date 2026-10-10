@@ -15,7 +15,7 @@
 // Re-running is safe: each place is stored under its Google place ID. A place counts as a duplicate when
 // it has the same place ID, or the same name (or one name contains the other) within 60 m. Branches of
 // the same chain in different places are kept. Venues already in Firestore get their description,
-// hours and services refreshed; their name, price, halal and serves are left alone.
+// hours and services refreshed; their name, cuisine, price, halal and serves are left alone.
 
 import * as fs from "fs";
 import * as path from "path";
@@ -159,10 +159,9 @@ type ImportedVenue = Venue & {
   distanceMeters: number;
 };
 
-// Fields refreshed on venues that are already in Firestore.
+// Fields refreshed on venues that are already in Firestore. cuisine is not: the venues sheet corrects Google's label.
 const DETAIL_FIELDS = [
   "description",
-  "cuisine",
   "openingHours",
   "services",
   "hasVegetarianOptions",
